@@ -27,50 +27,47 @@ import json
 import re
 import sys
 
-# CTE que resuelve los establecimientos del CUIT una sola vez.
-# Usa REPLACE sobre el input: para CUIT sin guiones el resultado es identico al
-# actual; ademas hace que el filtro funcione si el CUIT viene con guiones.
-EST_CTE = (
-    "WITH est_cuit AS ("
-    "SELECT DISTINCT e.nro_establecimiento "
-    "FROM prisma_ab_analytics_prod_db.establecimiento e "
+# EXISTS correlacionado contra la tabla grande (dos variantes de input del CUIT:
+# con y sin REPLACE). Se reescribe como IN con subconsulta NO correlacionada,
+# que Presto/Athena ejecuta una sola vez como hash semi-join. Resultado identico.
+#
+# Variante A (input sin REPLACE):
+EXISTS_A = (
+    "EXISTS(SELECT 1 FROM prisma_ab_analytics_prod_db.establecimiento e "
+    "WHERE TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER)=e.nro_establecimiento "
+    "AND TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT)"
+    "=TRY_CAST('${cuit:raw}' AS BIGINT))"
+)
+SEMIJOIN_A = (
+    "TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) IN "
+    "(SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e "
     "WHERE TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT)"
-    "=TRY_CAST(REPLACE('${cuit:raw}','-','') AS BIGINT)),\n"
+    "=TRY_CAST('${cuit:raw}' AS BIGINT))"
 )
 
-# EXISTS correlacionado contra la tabla grande (las dos variantes de input).
-EXISTS_RE = re.compile(
-    r"EXISTS\(SELECT 1 FROM prisma_ab_analytics_prod_db\.establecimiento e "
-    r"WHERE TRY_CAST\(TRIM\(a\.nroestablecimiento\) AS INTEGER\)=e\.nro_establecimiento "
-    r"AND TRY_CAST\(REPLACE\(e\.cuit_establecimiento_host,'-',''\) AS BIGINT\)"
-    r"=TRY_CAST\((?:REPLACE\()?'\$\{cuit:raw\}'(?:,'-',''\))? AS BIGINT\)\)"
+# Variante B (input con REPLACE, p.ej. panel 900):
+EXISTS_B = (
+    "EXISTS(SELECT 1 FROM prisma_ab_analytics_prod_db.establecimiento e "
+    "WHERE TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER)=e.nro_establecimiento "
+    "AND TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT)"
+    "=TRY_CAST(REPLACE('${cuit:raw}','-','') AS BIGINT))"
 )
-
-SEMIJOIN = (
-    "TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) "
-    "IN (SELECT nro_establecimiento FROM est_cuit)"
+SEMIJOIN_B = (
+    "TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) IN "
+    "(SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e "
+    "WHERE TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT)"
+    "=TRY_CAST(REPLACE('${cuit:raw}','-','') AS BIGINT))"
 )
 
 
 def transform_sql(sql: str):
     """Devuelve (sql_nuevo, n_reemplazos) para un rawSQL."""
-    if not sql or "prisma_ab_analytics_prod_db.establecimiento e" not in sql:
+    if not sql:
         return sql, 0
-
-    new_sql, n = EXISTS_RE.subn(SEMIJOIN, sql)
+    n = sql.count(EXISTS_A) + sql.count(EXISTS_B)
     if n == 0:
         return sql, 0
-
-    # Inyecta la CTE est_cuit una sola vez, justo despues del WITH inicial.
-    # "WITH x AS (..."  ->  "WITH est_cuit AS (...),x AS (..."
-    stripped = new_sql.lstrip()
-    if not stripped.startswith("WITH "):
-        # Defensivo: si el query no empieza con WITH, no tocamos la estructura.
-        raise ValueError(
-            "Se encontro EXISTS pero el query no comienza con 'WITH'. "
-            "Revisar manualmente."
-        )
-    new_sql = new_sql.replace("WITH ", EST_CTE, 1)
+    new_sql = sql.replace(EXISTS_A, SEMIJOIN_A).replace(EXISTS_B, SEMIJOIN_B)
     return new_sql, n
 
 
