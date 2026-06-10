@@ -10,7 +10,8 @@ Salida: desvios_optimizado.json
 import json
 
 DS = {"type": "grafana-athena-datasource", "uid": "bex5w10g549vkd"}
-CONN = {"catalog": "AwsDataCatalog", "database": "payway_poststage_prod_db", "region": "us-east-1"}
+CONN = {"catalog": "AwsDataCatalog", "database": "payway_poststage_prod_db", "region": "us-east-1",
+        "resultReuseEnabled": True, "resultReuseMaxAgeInMinutes": 5}
 
 
 def T(sql, refId="A", fmt=1):
@@ -38,8 +39,21 @@ CUITB = ("(COALESCE(NULLIF('${cuit:raw}',''),'-1')='-1' OR TRY_CAST(TRIM(a.nroes
          "(SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e "
          "WHERE TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT)=TRY_CAST(REPLACE('${cuit:raw}','-','') AS BIGINT)))")
 
-ESTBIN = ("('${establecimiento:raw}'='' OR TRIM(a.nroestablecimiento)='${establecimiento:raw}') "
-          "AND ('${bin:raw}'='' OR substr(regexp_extract(TRIM(a.nrotarjeta),'^[0-9]+'),1,8)='${bin:raw}')")
+ESTBIN_BASE = ("('${establecimiento:raw}'='' OR TRIM(a.nroestablecimiento)='${establecimiento:raw}') "
+               "AND ('${bin:raw}'='' OR substr(regexp_extract(TRIM(a.nrotarjeta),'^[0-9]+'),1,8)='${bin:raw}')")
+
+# CUITs excluidos del dashboard (lista NOC, dedupe aplicado). Se resuelve UNA vez
+# como anti-join. Guardas contra NULL: filas con nroestablecimiento no numerico no
+# se pierden, y el subquery exige nro_establecimiento IS NOT NULL para que el
+# NOT IN no anule todo el resultado.
+CUITS_EXCLUIDOS = "30712334610,30715313681,30717791904,30718438906,30716325586,30691399768,33714595569,30709228419"
+EXCL = (" AND (TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) IS NULL OR "
+        "TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) NOT IN "
+        "(SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e "
+        "WHERE e.nro_establecimiento IS NOT NULL AND "
+        "TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT) IN (" + CUITS_EXCLUIDOS + ")))")
+
+ESTBIN = ESTBIN_BASE + EXCL
 
 FILT = ("filt AS (SELECT * FROM b WHERE 1=1 "
         "AND ('${marca:text}'='All' OR marca_f IN (${marca:sqlstring})) "
@@ -619,7 +633,9 @@ sql900 = ("WITH \nest AS (SELECT nro_establecimiento, MAX(nombre_fantasia) AS nf
           "act AS (\n  SELECT e.cuit AS cuit, MAX(e.nf) AS nombre,\n    COUNT(*) AS total,\n    SUM(CASE WHEN f.cr IN('0000','0400','0900') THEN 1 ELSE 0 END) AS aprob,\n    SUM(CASE WHEN f.cr NOT IN('0000','0400','0900') THEN 1 ELSE 0 END) AS deneg\n  FROM filt f JOIN est e ON TRY_CAST(f.nroest AS INTEGER)=e.nro_establecimiento\n  WHERE f.ts>=$__timeFrom() AND f.ts<$__timeTo() AND f.cmsg<>'1420'\n  GROUP BY e.cuit\n),\n"
           + bb900 + ",\nfb AS (SELECT * FROM bb WHERE " + FILT_BODY + "),\n"
           "base AS (\n  SELECT e.cuit AS cuit,\n    ROUND(100.0*SUM(CASE WHEN f.cr IN('0000','0400','0900') THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),2) AS taa_base\n  FROM fb f JOIN est e ON TRY_CAST(f.nroest AS INTEGER)=e.nro_establecimiento\n  WHERE f.ts>=date_add('day',-1,$__timeFrom()) AND f.ts<date_add('day',-1,$__timeTo()) AND f.cmsg<>'1420'\n  GROUP BY e.cuit\n)\n"
-          "SELECT \n  act.cuit AS \"CUIT\",\n  COALESCE(act.nombre, act.cuit) AS \"Nombre\",\n  act.total AS \"Total TRX\",\n  act.deneg AS \"Denegadas\",\n  ROUND(100.0*act.aprob/NULLIF(act.total,0),2) AS \"TAA %\",\n  base.taa_base AS \"Baseline D-1 %\",\n  ROUND(ROUND(100.0*act.aprob/NULLIF(act.total,0),2) - base.taa_base, 1) AS \"Δpp\"\nFROM act LEFT JOIN base ON act.cuit=base.cuit\nWHERE act.cuit IS NOT NULL\nORDER BY act.deneg DESC\nLIMIT 50;")
+          "SELECT \n  act.cuit AS \"CUIT\",\n  COALESCE(act.nombre, act.cuit) AS \"Nombre\",\n  act.total AS \"Total TRX\",\n  act.deneg AS \"Denegadas\",\n  ROUND(100.0*act.aprob/NULLIF(act.total,0),2) AS \"TAA %\",\n  base.taa_base AS \"Baseline D-1 %\",\n  ROUND(ROUND(100.0*act.aprob/NULLIF(act.total,0),2) - base.taa_base, 1) AS \"Δpp\"\nFROM act LEFT JOIN base ON act.cuit=base.cuit\nWHERE act.cuit IS NOT NULL\n"
+          "  AND COALESCE(TRY_CAST(REPLACE(act.cuit,'-','') AS BIGINT),-1) NOT IN (" + CUITS_EXCLUIDOS + ")\n"
+          "ORDER BY act.deneg DESC\nLIMIT 50;")
 fc900 = {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}, "mappings": [],
          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": None}]}},
          "overrides": [
