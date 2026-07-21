@@ -496,10 +496,63 @@ panels.append(marca_panel(101, 12, 70, 12, "Mastercard · TAA + Aprob/Deneg · 1
 panels.append(marca_panel(102, 0, 77, 12, "Cabal · TAA + Aprob/Deneg · 15m", "TAA Cabal", ["PA"]))
 panels.append(marca_panel(103, 12, 77, 12, "Amex · TAA + Aprob/Deneg · 15m", "TAA Amex", ["AX"]))
 panels.append(marca_panel(104, 0, 84, 12, "UPI · TAA + Aprob/Deneg · 15m", "TAA UPI", ["UC"]))
-panels.append(row(430, "Detalle por producto · Crédito/Débito/Prepago (clasificación por INSTRMTYP)", 91))
-panels.append(marca_panel(110, 0, 92, 8, "Crédito · TAA + Aprob/Deneg · 15m", "TAA Crédito", ["VC","MC","AX","VB","MS","AC"]))
-panels.append(marca_panel(111, 8, 92, 8, "Débito · TAA + Aprob/Deneg · 15m", "TAA Débito", ["VD","MD","PA","SD","BD","VN"]))
-panels.append(marca_panel(112, 16, 92, 8, "Prepago · TAA + Aprob/Deneg · 15m", "TAA Prepago", ["VK","MK","PK","UC","SR","V6"]))
+# ---- Tipo de Producto (clasificacion nueva: PB=Marcas Privadas, PN=Naranja Pura,
+# PA debito por BIN 604201/65008700, UC indeterminado). Reemplaza a la seccion
+# vieja Credito/Debito/Prepago. ----
+panels.append(row(430, "Tipo de Producto \u00b7 con Marcas Privadas (PB) y Naranja Pura (PN)", 91))
+TSX = "CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR"
+BK15 = "date_trunc('minute'," + TSX + ")-(EXTRACT(MINUTE FROM " + TSX + ")%15)*INTERVAL '1' MINUTE"
+PART = [{"id": "partitionByValues", "options": {"fields": ["metric"], "keepFields": False, "naming": {"asLabels": True}}}]
+TIPO_PRODUCTO = ("CASE WHEN a.INSTRMTYP IN ('VD', 'MD', 'MS') THEN 'D\u00e9bito' "
+    "WHEN a.INSTRMTYP = 'PA' AND (SUBSTR(TRIM(a.nrotarjeta), 1, 6) = '604201' OR SUBSTR(TRIM(a.nrotarjeta), 1, 8) = '65008700') THEN 'D\u00e9bito' "
+    "WHEN a.INSTRMTYP IN ('V6', 'VB', 'VN', 'VC', 'MC', 'AX') THEN 'Cr\u00e9dito' "
+    "WHEN a.INSTRMTYP = 'PA' THEN 'Cr\u00e9dito' "
+    "WHEN a.INSTRMTYP IN ('VK', 'SR', 'MK') THEN 'Prepaga' "
+    "WHEN a.INSTRMTYP = 'PB' THEN 'Marcas Privadas' "
+    "WHEN a.INSTRMTYP = 'PN' THEN 'Naranja Pura' "
+    "WHEN a.INSTRMTYP = 'UC' THEN 'Indeterminado (Cr\u00e9dito/D\u00e9bito)' "
+    "ELSE 'Otro' END")
+TABLE_OVR = [
+    ovr("TAA %", [{"id": "unit", "value": "percent"}, {"id": "custom.cellOptions", "value": {"type": "color-text"}},
+        {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "red", "value": None}, {"color": "orange", "value": 80}, {"color": "green", "value": 85}]}}]),
+    ovr("Denegadas", [{"id": "custom.cellOptions", "value": {"mode": "gradient", "type": "color-background"}}, {"id": "color", "value": {"mode": "continuous-reds"}}]),
+    ovr("% del total", [{"id": "unit", "value": "percent"}, {"id": "custom.cellOptions", "value": {"mode": "basic", "type": "gauge"}}, {"id": "max", "value": 100}, {"id": "min", "value": 0}]),
+]
+
+def mk_table(pid, x, y, w, h, title, sql, sortby):
+    return {"datasource": DS,
+            "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False},
+                                          "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": None}]}},
+                             "overrides": TABLE_OVR},
+            "gridPos": {"h": h, "w": w, "x": x, "y": y}, "id": pid,
+            "options": {"cellHeight": "sm", "footer": {"countRows": False, "fields": "", "reducer": ["sum"], "show": False},
+                        "showHeader": True, "sortBy": [{"desc": True, "displayName": sortby}]},
+            "pluginVersion": "10.4.7", "targets": [T(sql)], "title": title, "type": "table"}
+
+base_prod = ("WITH agg AS (\n  SELECT " + BK15 + " AS bk,\n    " + TIPO_PRODUCTO + " AS tipo_producto,\n"
+    "    SUM(CASE WHEN TRIM(a.codrespuestaautorizacion) IN('0000','0400','0900') THEN 1 ELSE 0 END) AS aprob,\n"
+    "    SUM(CASE WHEN TRIM(a.codrespuestaautorizacion) NOT IN('0000','0400','0900') THEN 1 ELSE 0 END) AS deneg,\n"
+    "    COUNT(*) AS total\n  FROM payway_poststage_prod_db.ctx_autorizaciones_eps a\n"
+    "  WHERE a.fecha BETWEEN date_format(date_add('hour',-3,$__timeFrom()),'%Y-%m-%d') AND date_format(date_add('hour',-3,$__timeTo()),'%Y-%m-%d')\n"
+    "    AND " + TSX + ">=$__timeFrom() AND " + TSX + "<$__timeTo()\n"
+    "    AND TRIM(a.codprocesoautorizacion1) NOT IN('92','30')\n"
+    "    AND TRIM(a.codtipomensajeautorizacion)<>'1420'\n"
+    "    AND a.INSTRMTYP IN ('VD','VK','V6','VB','VN','SR','VC','MD','MC','MS','MK','AX','PA','UC','PB','PN')\n"
+    "    AND " + CUITA + " AND " + ESTBIN + INLINE + "\n  GROUP BY 1, 2\n)\n")
+fc110 = ts_fc([], unit="percent", decimals=1, soft=(50, 100), fill=0); fc110["defaults"]["custom"]["lineWidth"] = 2
+p110 = ts_panel(110, 0, 92, 8, 7, "TAA por Tipo de Producto \u00b7 15m", fc110,
+                [T(base_prod + "SELECT bk AS time, tipo_producto AS metric, ROUND(100.0*aprob/NULLIF(total,0),2) AS \"TAA %\" FROM agg ORDER BY 1, 2;", "A", 0)], PART)
+p110["options"]["legend"] = {"calcs": ["lastNotNull", "mean"], "displayMode": "table", "placement": "right", "showLegend": True}
+panels.append(p110)
+fc111 = ts_fc([], unit="short", fill=8)
+p111 = ts_panel(111, 8, 92, 8, 7, "Denegadas por Tipo de Producto \u00b7 15m", fc111,
+                [T(base_prod + "SELECT bk AS time, tipo_producto AS metric, deneg AS \"Denegadas\" FROM agg ORDER BY 1, 2;", "A", 0)], PART)
+p111["options"]["legend"] = {"calcs": ["sum", "max"], "displayMode": "table", "placement": "right", "showLegend": True}
+panels.append(p111)
+base_prod_tabla = base_prod.replace(BK15 + " AS bk,\n    ", "").replace("GROUP BY 1, 2", "GROUP BY 1")
+sql112 = (base_prod_tabla + "SELECT tipo_producto AS \"Tipo Producto\", total AS \"Total Op\", aprob AS \"Aprobadas\", deneg AS \"Denegadas\",\n"
+    "  ROUND(100.0*aprob/NULLIF(total,0),2) AS \"TAA %\",\n  ROUND(100.0*total/NULLIF(SUM(total) OVER (),0),1) AS \"% del total\"\nFROM agg ORDER BY total DESC;")
+panels.append(mk_table(112, 16, 92, 8, 7, "Resumen Tipo de Producto \u00b7 rango", sql112, "Total Op"))
 
 # ---- Lista de bancos (codigo, nombre) — una sola vez ----
 BANCOS = [
@@ -654,6 +707,60 @@ p900 = {"datasource": DS, "fieldConfig": fc900, "gridPos": {"h": 11, "w": 24, "x
 panels.append(p900)
 print("paneles construidos:", len(panels))
 
+# ---- NUEVO: QR y Billeteras (fill9: pos.1='Q' = pago QR, pos.2 = wallet id) ----
+panels.append(row(950, "QR y Billeteras \u00b7 fill9 (pos.1='Q' pago QR, pos.2 = wallet id)", 130))
+WALLET_MAP = ("CASE SUBSTRING(a.fill9, 2, 1) WHEN '1' THEN 'Tp' WHEN '2' THEN 'Macro' WHEN '3' THEN 'Modo (MODO)' "
+    "WHEN '4' THEN 'Bimo' WHEN '5' THEN 'Pagochat' WHEN '6' THEN 'Bapro_cuentaDNI (CDNI)' WHEN '7' THEN 'Bna' "
+    "WHEN '8' THEN 'Bsf' WHEN '9' THEN 'Cenco' WHEN 'M' THEN 'Mercado Pago (MEPA)' WHEN 'A' THEN 'Plus Pagos (PLUS)' "
+    "WHEN 'B' THEN 'Nubi (NUBI)' WHEN 'C' THEN 'Naranja X (NARX)' WHEN 'D' THEN 'Persona Pay (PEPA)' "
+    "WHEN 'Y' THEN 'Yacar\u00e9 (YACA)' ELSE 'NO MAPEADO / DESCONOCIDO' END")
+base_qr = ("WITH q AS (\n  SELECT " + BK15 + " AS bk, SUBSTRING(a.fill9, 2, 1) AS wallet_id_codigo,\n    " + WALLET_MAP + " AS billetera,\n"
+    "    TRIM(a.codrespuestaautorizacion) AS cr\n  FROM payway_poststage_prod_db.ctx_autorizaciones_eps a\n"
+    "  WHERE a.fecha BETWEEN date_format(date_add('hour',-3,$__timeFrom()),'%Y-%m-%d') AND date_format(date_add('hour',-3,$__timeTo()),'%Y-%m-%d')\n"
+    "    AND " + TSX + ">=$__timeFrom() AND " + TSX + "<$__timeTo()\n"
+    "    AND SUBSTRING(a.fill9, 1, 1) = 'Q'\n    AND TRIM(a.codtipomensajeautorizacion) <> '1500'\n"
+    "    AND " + CUITA + " AND " + ESTBIN + INLINE + "\n)\n")
+fc130 = ts_fc([], unit="short", fill=8)
+p130 = ts_panel(130, 0, 131, 14, 8, "Operaciones QR por Billetera \u00b7 15m", fc130,
+                [T(base_qr + "SELECT bk AS time, billetera AS metric, COUNT(*) AS \"Operaciones\" FROM q GROUP BY 1, 2 ORDER BY 1;", "A", 0)], PART)
+p130["options"]["legend"] = {"calcs": ["sum", "max"], "displayMode": "table", "placement": "right", "showLegend": True}
+panels.append(p130)
+sql131 = (base_qr + "SELECT billetera AS \"Billetera\", wallet_id_codigo AS \"C\u00f3d.\", COUNT(*) AS \"Operaciones\",\n"
+    "  SUM(CASE WHEN cr IN('0000','0400','0900') THEN 1 ELSE 0 END) AS \"Aprobadas\",\n"
+    "  SUM(CASE WHEN cr NOT IN('0000','0400','0900') THEN 1 ELSE 0 END) AS \"Denegadas\",\n"
+    "  ROUND(100.0*SUM(CASE WHEN cr IN('0000','0400','0900') THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),2) AS \"TAA %\",\n"
+    "  ROUND(100.0*COUNT(*)/NULLIF(SUM(COUNT(*)) OVER (),0),1) AS \"% del total\"\nFROM q GROUP BY 1, 2 ORDER BY 3 DESC;")
+panels.append(mk_table(131, 14, 131, 10, 8, "Ranking Billeteras QR \u00b7 rango", sql131, "Operaciones"))
+
+# ---- NUEVO: Modalidades (DA / E-commerce / Presente) ----
+panels.append(row(960, "Modalidades \u00b7 D\u00e9bito Autom\u00e1tico / E-commerce / Presente", 139))
+MODALIDAD = ("CASE WHEN a.coddebitoautomatico = '1' THEN 'D\u00e9bito Autom\u00e1tico' "
+    "WHEN a.codidentpresenciacliente = '8' THEN 'E-commerce' "
+    "WHEN a.codidentpresenciacliente <> '8' THEN 'Presente' ELSE 'Indeterminado' END")
+base_mod = ("WITH m AS (\n  SELECT " + BK15 + " AS bk,\n    " + MODALIDAD + " AS modalidad,\n"
+    "    TRIM(a.codrespuestaautorizacion) AS cr\n  FROM payway_poststage_prod_db.ctx_autorizaciones_eps a\n"
+    "  WHERE a.fecha BETWEEN date_format(date_add('hour',-3,$__timeFrom()),'%Y-%m-%d') AND date_format(date_add('hour',-3,$__timeTo()),'%Y-%m-%d')\n"
+    "    AND " + TSX + ">=$__timeFrom() AND " + TSX + "<$__timeTo()\n"
+    "    AND TRIM(a.codprocesoautorizacion1) NOT IN('92','30')\n"
+    "    AND TRIM(a.codtipomensajeautorizacion)<>'1420'\n"
+    "    AND " + CUITA + " AND " + ESTBIN + INLINE + "\n)\n")
+fc140 = ts_fc([], unit="percent", decimals=1, soft=(50, 100), fill=0); fc140["defaults"]["custom"]["lineWidth"] = 2
+p140 = ts_panel(140, 0, 140, 12, 7, "TAA por Modalidad \u00b7 15m", fc140,
+                [T(base_mod + "SELECT bk AS time, modalidad AS metric,\n  ROUND(100.0*SUM(CASE WHEN cr IN('0000','0400','0900') THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),2) AS \"TAA %\"\nFROM m GROUP BY 1, 2 ORDER BY 1;", "A", 0)], PART)
+p140["options"]["legend"] = {"calcs": ["lastNotNull", "mean"], "displayMode": "list", "placement": "bottom", "showLegend": True}
+panels.append(p140)
+fc141 = ts_fc([], unit="short", fill=8)
+p141 = ts_panel(141, 12, 140, 12, 7, "Volumen por Modalidad \u00b7 15m", fc141,
+                [T(base_mod + "SELECT bk AS time, modalidad AS metric, COUNT(*) AS \"Transacciones\" FROM m GROUP BY 1, 2 ORDER BY 1;", "A", 0)], PART)
+p141["options"]["legend"] = {"calcs": ["sum", "max"], "displayMode": "list", "placement": "bottom", "showLegend": True}
+panels.append(p141)
+sql142 = (base_mod + "SELECT modalidad AS \"Modalidad\", COUNT(*) AS \"Transacciones\",\n"
+    "  SUM(CASE WHEN cr IN('0000','0400','0900') THEN 1 ELSE 0 END) AS \"Aprobadas\",\n"
+    "  SUM(CASE WHEN cr NOT IN('0000','0400','0900') THEN 1 ELSE 0 END) AS \"Denegadas\",\n"
+    "  ROUND(100.0*SUM(CASE WHEN cr IN('0000','0400','0900') THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),2) AS \"TAA %\",\n"
+    "  ROUND(100.0*COUNT(*)/NULLIF(SUM(COUNT(*)) OVER (),0),1) AS \"% del total\"\nFROM m GROUP BY 1 ORDER BY 2 DESC;")
+panels.append(mk_table(142, 0, 147, 24, 6, "Resumen por Modalidad \u00b7 rango", sql142, "Transacciones"))
+
 # ---------------- TEMPLATING ----------------
 def textbox(name, label, desc):
     return {"current": {"selected": False, "text": "", "value": ""}, "description": desc, "hide": 0,
@@ -720,3 +827,14 @@ dash = {
 with open("desvios_optimizado.json", "w", encoding="utf-8") as fh:
     json.dump(dash, fh, ensure_ascii=False, indent=2)
 print("OK -> desvios_optimizado.json | paneles:", len(panels))
+
+import copy
+d2 = copy.deepcopy(dash)
+d2["uid"] = "desvios-v2"
+d2["version"] = 2
+d2["title"] = "Desv\u00edos \u00b7 CUIT/Establecimiento \u00b7 v2.1"
+d2["description"] = (d2.get("description", "") + " | v2.1: Tipo Producto nuevo (PB=Marcas Privadas, "
+                     "PN=Naranja Pura, PA d\u00e9bito por BIN), QR/Billeteras (fill9), Modalidades DA/EC/Presente.")
+with open("desvios_v2.1.json", "w", encoding="utf-8") as fh:
+    json.dump(d2, fh, ensure_ascii=False, indent=2)
+print("OK -> desvios_v2.1.json (uid desvios-v2)")

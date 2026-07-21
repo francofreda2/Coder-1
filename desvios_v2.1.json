@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "Template + CUITs afectados + drill-down. FIX filtro banco (padding 3 díg) + filtro BIN nuevo. OPTIMIZADO: refresh 1m, CUIT semi-join, filtros 800/801.",
+  "description": "Template + CUITs afectados + drill-down. FIX filtro banco (padding 3 díg) + filtro BIN nuevo. OPTIMIZADO: refresh 1m, CUIT semi-join, filtros 800/801. | v2.1: Tipo Producto nuevo (PB=Marcas Privadas, PN=Naranja Pura, PA débito por BIN), QR/Billeteras (fill9), Modalidades DA/EC/Presente.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 2,
@@ -7346,8 +7346,8 @@
     ]
   },
   "timezone": "browser",
-  "title": "Desvíos · CUIT/Establecimiento · Versión Establecimientos + Drill-down CUITs",
-  "uid": "desvios",
-  "version": 1,
+  "title": "Desvíos · CUIT/Establecimiento · v2.1",
+  "uid": "desvios-v2",
+  "version": 2,
   "weekStart": ""
 }
