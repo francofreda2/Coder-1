@@ -1,0 +1,1152 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Nuevos atributos: Tipo de Producto (con PB=Marcas Privadas y PN=Naranja Pura, PA débito por BIN 604201/65008700), QR y Billeteras (fill9), Modalidades (DA/E-commerce/Presente). Excluye 8 CUITs (anti-join). Result reuse 5m.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 2,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "title": "Tipo de Producto · clasificación con Marcas Privadas (PB) y Naranja Pura (PN)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "bex5w10g549vkd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisSoftMin": 50,
+            "axisSoftMax": 100
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "connectionArgs": {
+            "catalog": "AwsDataCatalog",
+            "database": "payway_poststage_prod_db",
+            "region": "us-east-1",
+            "resultReuseEnabled": true,
+            "resultReuseMaxAgeInMinutes": 5
+          },
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "bex5w10g549vkd"
+          },
+          "format": 0,
+          "rawSQL": "WITH agg AS (\n  SELECT \n    date_trunc('minute',CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)-(EXTRACT(MINUTE FROM CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)%15)*INTERVAL '1' MINUTE AS bk,\n    CASE \n        WHEN a.INSTRMTYP IN ('VD', 'MD', 'MS') THEN 'Débito'\n        WHEN a.INSTRMTYP = 'PA' AND (SUBSTR(TRIM(a.nrotarjeta), 1, 6) = '604201' OR SUBSTR(TRIM(a.nrotarjeta), 1, 8) = '65008700') THEN 'Débito'\n        WHEN a.INSTRMTYP IN ('V6', 'VB', 'VN', 'VC', 'MC', 'AX') THEN 'Crédito'\n        WHEN a.INSTRMTYP = 'PA' THEN 'Crédito' \n        WHEN a.INSTRMTYP IN ('VK', 'SR', 'MK') THEN 'Prepaga'\n        WHEN a.INSTRMTYP = 'PB' THEN 'Marcas Privadas'\n        WHEN a.INSTRMTYP = 'PN' THEN 'Naranja Pura'\n        WHEN a.INSTRMTYP = 'UC' THEN 'Indeterminado (Crédito/Débito)'\n        ELSE 'Otro'\n    END AS tipo_producto,\n    SUM(CASE WHEN TRIM(a.codrespuestaautorizacion) IN('0000','0400','0900') THEN 1 ELSE 0 END) AS aprob,\n    SUM(CASE WHEN TRIM(a.codrespuestaautorizacion) NOT IN('0000','0400','0900') THEN 1 ELSE 0 END) AS deneg,\n    COUNT(*) AS total\n  FROM payway_poststage_prod_db.ctx_autorizaciones_eps a\n  WHERE a.fecha BETWEEN date_format(date_add('hour',-3,$__timeFrom()),'%Y-%m-%d') AND date_format(date_add('hour',-3,$__timeTo()),'%Y-%m-%d')\n    AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)>=$__timeFrom() AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)<$__timeTo()\n    AND TRIM(a.codprocesoautorizacion1) NOT IN ('92','30')\n    AND TRIM(a.codtipomensajeautorizacion) <> '1420'\n    AND a.INSTRMTYP IN ('VD','VK','V6','VB','VN','SR','VC','MD','MC','MS','MK','AX','PA','UC','PB','PN') AND (TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) IS NULL OR TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) NOT IN (SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e WHERE e.nro_establecimiento IS NOT NULL AND TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT) IN (30712334610,30715313681,30717791904,30718438906,30716325586,30691399768,33714595569,30709228419)))\n  GROUP BY 1, 2\n)\nSELECT bk AS time, tipo_producto AS metric, ROUND(100.0*aprob/NULLIF(total,0),2) AS \"TAA %\" FROM agg ORDER BY 1, 2;",
+          "refId": "A"
+        }
+      ],
+      "title": "TAA por Tipo de Producto · 15m",
+      "type": "timeseries",
+      "transformations": [
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": [
+              "metric"
+            ],
+            "keepFields": false,
+            "naming": {
+              "asLabels": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "bex5w10g549vkd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "connectionArgs": {
+            "catalog": "AwsDataCatalog",
+            "database": "payway_poststage_prod_db",
+            "region": "us-east-1",
+            "resultReuseEnabled": true,
+            "resultReuseMaxAgeInMinutes": 5
+          },
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "bex5w10g549vkd"
+          },
+          "format": 0,
+          "rawSQL": "WITH agg AS (\n  SELECT \n    date_trunc('minute',CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)-(EXTRACT(MINUTE FROM CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)%15)*INTERVAL '1' MINUTE AS bk,\n    CASE \n        WHEN a.INSTRMTYP IN ('VD', 'MD', 'MS') THEN 'Débito'\n        WHEN a.INSTRMTYP = 'PA' AND (SUBSTR(TRIM(a.nrotarjeta), 1, 6) = '604201' OR SUBSTR(TRIM(a.nrotarjeta), 1, 8) = '65008700') THEN 'Débito'\n        WHEN a.INSTRMTYP IN ('V6', 'VB', 'VN', 'VC', 'MC', 'AX') THEN 'Crédito'\n        WHEN a.INSTRMTYP = 'PA' THEN 'Crédito' \n        WHEN a.INSTRMTYP IN ('VK', 'SR', 'MK') THEN 'Prepaga'\n        WHEN a.INSTRMTYP = 'PB' THEN 'Marcas Privadas'\n        WHEN a.INSTRMTYP = 'PN' THEN 'Naranja Pura'\n        WHEN a.INSTRMTYP = 'UC' THEN 'Indeterminado (Crédito/Débito)'\n        ELSE 'Otro'\n    END AS tipo_producto,\n    SUM(CASE WHEN TRIM(a.codrespuestaautorizacion) IN('0000','0400','0900') THEN 1 ELSE 0 END) AS aprob,\n    SUM(CASE WHEN TRIM(a.codrespuestaautorizacion) NOT IN('0000','0400','0900') THEN 1 ELSE 0 END) AS deneg,\n    COUNT(*) AS total\n  FROM payway_poststage_prod_db.ctx_autorizaciones_eps a\n  WHERE a.fecha BETWEEN date_format(date_add('hour',-3,$__timeFrom()),'%Y-%m-%d') AND date_format(date_add('hour',-3,$__timeTo()),'%Y-%m-%d')\n    AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)>=$__timeFrom() AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)<$__timeTo()\n    AND TRIM(a.codprocesoautorizacion1) NOT IN ('92','30')\n    AND TRIM(a.codtipomensajeautorizacion) <> '1420'\n    AND a.INSTRMTYP IN ('VD','VK','V6','VB','VN','SR','VC','MD','MC','MS','MK','AX','PA','UC','PB','PN') AND (TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) IS NULL OR TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) NOT IN (SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e WHERE e.nro_establecimiento IS NOT NULL AND TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT) IN (30712334610,30715313681,30717791904,30718438906,30716325586,30691399768,33714595569,30709228419)))\n  GROUP BY 1, 2\n)\nSELECT bk AS time, tipo_producto AS metric, deneg AS \"Denegadas\" FROM agg ORDER BY 1, 2;",
+          "refId": "A"
+        }
+      ],
+      "title": "Denegadas por Tipo de Producto · 15m",
+      "type": "timeseries",
+      "transformations": [
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": [
+              "metric"
+            ],
+            "keepFields": false,
+            "naming": {
+              "asLabels": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "bex5w10g549vkd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TAA %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 80
+                    },
+                    {
+                      "color": "green",
+                      "value": 85
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Denegadas"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-reds"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "% del total"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "gauge"
+                }
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "min",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "id": 3,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Total Op"
+          }
+        ]
+      },
+      "pluginVersion": "10.4.7",
+      "targets": [
+        {
+          "connectionArgs": {
+            "catalog": "AwsDataCatalog",
+            "database": "payway_poststage_prod_db",
+            "region": "us-east-1",
+            "resultReuseEnabled": true,
+            "resultReuseMaxAgeInMinutes": 5
+          },
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "bex5w10g549vkd"
+          },
+          "format": 1,
+          "rawSQL": "WITH agg AS (\n  SELECT \n    CASE \n        WHEN a.INSTRMTYP IN ('VD', 'MD', 'MS') THEN 'Débito'\n        WHEN a.INSTRMTYP = 'PA' AND (SUBSTR(TRIM(a.nrotarjeta), 1, 6) = '604201' OR SUBSTR(TRIM(a.nrotarjeta), 1, 8) = '65008700') THEN 'Débito'\n        WHEN a.INSTRMTYP IN ('V6', 'VB', 'VN', 'VC', 'MC', 'AX') THEN 'Crédito'\n        WHEN a.INSTRMTYP = 'PA' THEN 'Crédito' \n        WHEN a.INSTRMTYP IN ('VK', 'SR', 'MK') THEN 'Prepaga'\n        WHEN a.INSTRMTYP = 'PB' THEN 'Marcas Privadas'\n        WHEN a.INSTRMTYP = 'PN' THEN 'Naranja Pura'\n        WHEN a.INSTRMTYP = 'UC' THEN 'Indeterminado (Crédito/Débito)'\n        ELSE 'Otro'\n    END AS tipo_producto,\n    SUM(CASE WHEN TRIM(a.codrespuestaautorizacion) IN('0000','0400','0900') THEN 1 ELSE 0 END) AS aprob,\n    SUM(CASE WHEN TRIM(a.codrespuestaautorizacion) NOT IN('0000','0400','0900') THEN 1 ELSE 0 END) AS deneg,\n    COUNT(*) AS total\n  FROM payway_poststage_prod_db.ctx_autorizaciones_eps a\n  WHERE a.fecha BETWEEN date_format(date_add('hour',-3,$__timeFrom()),'%Y-%m-%d') AND date_format(date_add('hour',-3,$__timeTo()),'%Y-%m-%d')\n    AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)>=$__timeFrom() AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)<$__timeTo()\n    AND TRIM(a.codprocesoautorizacion1) NOT IN ('92','30')\n    AND TRIM(a.codtipomensajeautorizacion) <> '1420'\n    AND a.INSTRMTYP IN ('VD','VK','V6','VB','VN','SR','VC','MD','MC','MS','MK','AX','PA','UC','PB','PN') AND (TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) IS NULL OR TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) NOT IN (SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e WHERE e.nro_establecimiento IS NOT NULL AND TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT) IN (30712334610,30715313681,30717791904,30718438906,30716325586,30691399768,33714595569,30709228419)))\n  GROUP BY 1\n)\nSELECT tipo_producto AS \"Tipo Producto\", total AS \"Total Op\", aprob AS \"Aprobadas\", deneg AS \"Denegadas\",\n  ROUND(100.0*aprob/NULLIF(total,0),2) AS \"TAA %\",\n  ROUND(100.0*total/NULLIF(SUM(total) OVER (),0),1) AS \"% del total\"\nFROM agg ORDER BY total DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Resumen por Tipo de Producto · rango seleccionado",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 200,
+      "title": "QR y Billeteras · fill9 (pos.1 = 'Q' pago QR, pos.2 = wallet id)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "bex5w10g549vkd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 14,
+        "x": 0,
+        "y": 17
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "connectionArgs": {
+            "catalog": "AwsDataCatalog",
+            "database": "payway_poststage_prod_db",
+            "region": "us-east-1",
+            "resultReuseEnabled": true,
+            "resultReuseMaxAgeInMinutes": 5
+          },
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "bex5w10g549vkd"
+          },
+          "format": 0,
+          "rawSQL": "WITH q AS (\n  SELECT \n    date_trunc('minute',CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)-(EXTRACT(MINUTE FROM CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)%15)*INTERVAL '1' MINUTE AS bk,\n    SUBSTRING(a.fill9, 2, 1) AS wallet_id_codigo,\n    CASE SUBSTRING(a.fill9, 2, 1)\n        WHEN '1' THEN 'Tp'\n        WHEN '2' THEN 'Macro'\n        WHEN '3' THEN 'Modo (MODO)'\n        WHEN '4' THEN 'Bimo'\n        WHEN '5' THEN 'Pagochat'\n        WHEN '6' THEN 'Bapro_cuentaDNI (CDNI)'\n        WHEN '7' THEN 'Bna'\n        WHEN '8' THEN 'Bsf'\n        WHEN '9' THEN 'Cenco'\n        WHEN 'M' THEN 'Mercado Pago (MEPA)'\n        WHEN 'A' THEN 'Plus Pagos (PLUS)'\n        WHEN 'B' THEN 'Nubi (NUBI)'\n        WHEN 'C' THEN 'Naranja X (NARX)'\n        WHEN 'D' THEN 'Persona Pay (PEPA)'\n        WHEN 'Y' THEN 'Yacaré (YACA)'\n        ELSE 'NO MAPEADO / DESCONOCIDO'\n    END AS billetera,\n    TRIM(a.codrespuestaautorizacion) AS cr\n  FROM payway_poststage_prod_db.ctx_autorizaciones_eps a\n  WHERE a.fecha BETWEEN date_format(date_add('hour',-3,$__timeFrom()),'%Y-%m-%d') AND date_format(date_add('hour',-3,$__timeTo()),'%Y-%m-%d')\n    AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)>=$__timeFrom() AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)<$__timeTo()\n    AND SUBSTRING(a.fill9, 1, 1) = 'Q'\n    AND TRIM(a.codtipomensajeautorizacion) <> '1500' AND (TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) IS NULL OR TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) NOT IN (SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e WHERE e.nro_establecimiento IS NOT NULL AND TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT) IN (30712334610,30715313681,30717791904,30718438906,30716325586,30691399768,33714595569,30709228419)))\n)\nSELECT bk AS time, billetera AS metric, COUNT(*) AS \"Operaciones\" FROM q GROUP BY 1, 2 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "Operaciones QR por Billetera · 15m",
+      "type": "timeseries",
+      "transformations": [
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": [
+              "metric"
+            ],
+            "keepFields": false,
+            "naming": {
+              "asLabels": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "bex5w10g549vkd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TAA %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 80
+                    },
+                    {
+                      "color": "green",
+                      "value": 85
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Denegadas"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-reds"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "% del total"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "gauge"
+                }
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "min",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 14,
+        "y": 17
+      },
+      "id": 11,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Operaciones"
+          }
+        ]
+      },
+      "pluginVersion": "10.4.7",
+      "targets": [
+        {
+          "connectionArgs": {
+            "catalog": "AwsDataCatalog",
+            "database": "payway_poststage_prod_db",
+            "region": "us-east-1",
+            "resultReuseEnabled": true,
+            "resultReuseMaxAgeInMinutes": 5
+          },
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "bex5w10g549vkd"
+          },
+          "format": 1,
+          "rawSQL": "WITH q AS (\n  SELECT \n    date_trunc('minute',CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)-(EXTRACT(MINUTE FROM CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)%15)*INTERVAL '1' MINUTE AS bk,\n    SUBSTRING(a.fill9, 2, 1) AS wallet_id_codigo,\n    CASE SUBSTRING(a.fill9, 2, 1)\n        WHEN '1' THEN 'Tp'\n        WHEN '2' THEN 'Macro'\n        WHEN '3' THEN 'Modo (MODO)'\n        WHEN '4' THEN 'Bimo'\n        WHEN '5' THEN 'Pagochat'\n        WHEN '6' THEN 'Bapro_cuentaDNI (CDNI)'\n        WHEN '7' THEN 'Bna'\n        WHEN '8' THEN 'Bsf'\n        WHEN '9' THEN 'Cenco'\n        WHEN 'M' THEN 'Mercado Pago (MEPA)'\n        WHEN 'A' THEN 'Plus Pagos (PLUS)'\n        WHEN 'B' THEN 'Nubi (NUBI)'\n        WHEN 'C' THEN 'Naranja X (NARX)'\n        WHEN 'D' THEN 'Persona Pay (PEPA)'\n        WHEN 'Y' THEN 'Yacaré (YACA)'\n        ELSE 'NO MAPEADO / DESCONOCIDO'\n    END AS billetera,\n    TRIM(a.codrespuestaautorizacion) AS cr\n  FROM payway_poststage_prod_db.ctx_autorizaciones_eps a\n  WHERE a.fecha BETWEEN date_format(date_add('hour',-3,$__timeFrom()),'%Y-%m-%d') AND date_format(date_add('hour',-3,$__timeTo()),'%Y-%m-%d')\n    AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)>=$__timeFrom() AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)<$__timeTo()\n    AND SUBSTRING(a.fill9, 1, 1) = 'Q'\n    AND TRIM(a.codtipomensajeautorizacion) <> '1500' AND (TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) IS NULL OR TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) NOT IN (SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e WHERE e.nro_establecimiento IS NOT NULL AND TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT) IN (30712334610,30715313681,30717791904,30718438906,30716325586,30691399768,33714595569,30709228419)))\n)\nSELECT billetera AS \"Billetera\", wallet_id_codigo AS \"Cód.\",\n  COUNT(*) AS \"Operaciones\",\n  SUM(CASE WHEN cr IN('0000','0400','0900') THEN 1 ELSE 0 END) AS \"Aprobadas\",\n  SUM(CASE WHEN cr NOT IN('0000','0400','0900') THEN 1 ELSE 0 END) AS \"Denegadas\",\n  ROUND(100.0*SUM(CASE WHEN cr IN('0000','0400','0900') THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),2) AS \"TAA %\",\n  ROUND(100.0*COUNT(*)/NULLIF(SUM(COUNT(*)) OVER (),0),1) AS \"% del total\"\nFROM q GROUP BY 1, 2 ORDER BY 3 DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Ranking Billeteras QR · rango seleccionado",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "id": 300,
+      "title": "Modalidades · Débito Automático / E-commerce / Presente",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "bex5w10g549vkd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisSoftMin": 50,
+            "axisSoftMax": 100
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "id": 20,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "connectionArgs": {
+            "catalog": "AwsDataCatalog",
+            "database": "payway_poststage_prod_db",
+            "region": "us-east-1",
+            "resultReuseEnabled": true,
+            "resultReuseMaxAgeInMinutes": 5
+          },
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "bex5w10g549vkd"
+          },
+          "format": 0,
+          "rawSQL": "WITH m AS (\n  SELECT \n    date_trunc('minute',CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)-(EXTRACT(MINUTE FROM CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)%15)*INTERVAL '1' MINUTE AS bk,\n    CASE \n        WHEN a.coddebitoautomatico = '1' THEN 'Débito Automático'\n        WHEN a.codidentpresenciacliente = '8' THEN 'E-commerce'\n        WHEN a.codidentpresenciacliente <> '8' THEN 'Presente'\n        ELSE 'Indeterminado'\n    END AS modalidad,\n    TRIM(a.codrespuestaautorizacion) AS cr\n  FROM payway_poststage_prod_db.ctx_autorizaciones_eps a\n  WHERE a.fecha BETWEEN date_format(date_add('hour',-3,$__timeFrom()),'%Y-%m-%d') AND date_format(date_add('hour',-3,$__timeTo()),'%Y-%m-%d')\n    AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)>=$__timeFrom() AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)<$__timeTo()\n    AND TRIM(a.codprocesoautorizacion1) NOT IN ('92','30')\n    AND TRIM(a.codtipomensajeautorizacion) <> '1420' AND (TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) IS NULL OR TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) NOT IN (SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e WHERE e.nro_establecimiento IS NOT NULL AND TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT) IN (30712334610,30715313681,30717791904,30718438906,30716325586,30691399768,33714595569,30709228419)))\n)\nSELECT bk AS time, modalidad AS metric,\n  ROUND(100.0*SUM(CASE WHEN cr IN('0000','0400','0900') THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),2) AS \"TAA %\"\nFROM m GROUP BY 1, 2 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "TAA por Modalidad · 15m",
+      "type": "timeseries",
+      "transformations": [
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": [
+              "metric"
+            ],
+            "keepFields": false,
+            "naming": {
+              "asLabels": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "bex5w10g549vkd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "id": 21,
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "connectionArgs": {
+            "catalog": "AwsDataCatalog",
+            "database": "payway_poststage_prod_db",
+            "region": "us-east-1",
+            "resultReuseEnabled": true,
+            "resultReuseMaxAgeInMinutes": 5
+          },
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "bex5w10g549vkd"
+          },
+          "format": 0,
+          "rawSQL": "WITH m AS (\n  SELECT \n    date_trunc('minute',CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)-(EXTRACT(MINUTE FROM CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)%15)*INTERVAL '1' MINUTE AS bk,\n    CASE \n        WHEN a.coddebitoautomatico = '1' THEN 'Débito Automático'\n        WHEN a.codidentpresenciacliente = '8' THEN 'E-commerce'\n        WHEN a.codidentpresenciacliente <> '8' THEN 'Presente'\n        ELSE 'Indeterminado'\n    END AS modalidad,\n    TRIM(a.codrespuestaautorizacion) AS cr\n  FROM payway_poststage_prod_db.ctx_autorizaciones_eps a\n  WHERE a.fecha BETWEEN date_format(date_add('hour',-3,$__timeFrom()),'%Y-%m-%d') AND date_format(date_add('hour',-3,$__timeTo()),'%Y-%m-%d')\n    AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)>=$__timeFrom() AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)<$__timeTo()\n    AND TRIM(a.codprocesoautorizacion1) NOT IN ('92','30')\n    AND TRIM(a.codtipomensajeautorizacion) <> '1420' AND (TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) IS NULL OR TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) NOT IN (SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e WHERE e.nro_establecimiento IS NOT NULL AND TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT) IN (30712334610,30715313681,30717791904,30718438906,30716325586,30691399768,33714595569,30709228419)))\n)\nSELECT bk AS time, modalidad AS metric, COUNT(*) AS \"Transacciones\" FROM m GROUP BY 1, 2 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "Volumen por Modalidad · 15m",
+      "type": "timeseries",
+      "transformations": [
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": [
+              "metric"
+            ],
+            "keepFields": false,
+            "naming": {
+              "asLabels": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "bex5w10g549vkd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TAA %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 80
+                    },
+                    {
+                      "color": "green",
+                      "value": 85
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Denegadas"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-reds"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "% del total"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "gauge"
+                }
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "min",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "id": 22,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Transacciones"
+          }
+        ]
+      },
+      "pluginVersion": "10.4.7",
+      "targets": [
+        {
+          "connectionArgs": {
+            "catalog": "AwsDataCatalog",
+            "database": "payway_poststage_prod_db",
+            "region": "us-east-1",
+            "resultReuseEnabled": true,
+            "resultReuseMaxAgeInMinutes": 5
+          },
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "bex5w10g549vkd"
+          },
+          "format": 1,
+          "rawSQL": "WITH m AS (\n  SELECT \n    date_trunc('minute',CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)-(EXTRACT(MINUTE FROM CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)%15)*INTERVAL '1' MINUTE AS bk,\n    CASE \n        WHEN a.coddebitoautomatico = '1' THEN 'Débito Automático'\n        WHEN a.codidentpresenciacliente = '8' THEN 'E-commerce'\n        WHEN a.codidentpresenciacliente <> '8' THEN 'Presente'\n        ELSE 'Indeterminado'\n    END AS modalidad,\n    TRIM(a.codrespuestaautorizacion) AS cr\n  FROM payway_poststage_prod_db.ctx_autorizaciones_eps a\n  WHERE a.fecha BETWEEN date_format(date_add('hour',-3,$__timeFrom()),'%Y-%m-%d') AND date_format(date_add('hour',-3,$__timeTo()),'%Y-%m-%d')\n    AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)>=$__timeFrom() AND (CAST(date_parse(concat(a.fechalocalautorizacion,a.horalocalautorizacion),'%y%m%d%H%i%s') AS timestamp)+INTERVAL '3' HOUR)<$__timeTo()\n    AND TRIM(a.codprocesoautorizacion1) NOT IN ('92','30')\n    AND TRIM(a.codtipomensajeautorizacion) <> '1420' AND (TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) IS NULL OR TRY_CAST(TRIM(a.nroestablecimiento) AS INTEGER) NOT IN (SELECT e.nro_establecimiento FROM prisma_ab_analytics_prod_db.establecimiento e WHERE e.nro_establecimiento IS NOT NULL AND TRY_CAST(REPLACE(e.cuit_establecimiento_host,'-','') AS BIGINT) IN (30712334610,30715313681,30717791904,30718438906,30716325586,30691399768,33714595569,30709228419)))\n)\nSELECT modalidad AS \"Modalidad\", COUNT(*) AS \"Transacciones\",\n  SUM(CASE WHEN cr IN('0000','0400','0900') THEN 1 ELSE 0 END) AS \"Aprobadas\",\n  SUM(CASE WHEN cr NOT IN('0000','0400','0900') THEN 1 ELSE 0 END) AS \"Denegadas\",\n  ROUND(100.0*SUM(CASE WHEN cr IN('0000','0400','0900') THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),2) AS \"TAA %\",\n  ROUND(100.0*COUNT(*)/NULLIF(SUM(COUNT(*)) OVER (),0),1) AS \"% del total\"\nFROM m GROUP BY 1 ORDER BY 2 DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Resumen por Modalidad · rango seleccionado",
+      "type": "table"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": [
+    "payway",
+    "noc",
+    "producto",
+    "qr",
+    "billeteras",
+    "modalidades"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m"
+    ],
+    "time_options": [
+      "1h",
+      "3h",
+      "6h",
+      "12h",
+      "24h"
+    ]
+  },
+  "timezone": "browser",
+  "title": "Payway · Tipo Producto · QR/Billeteras · Modalidades",
+  "uid": "payway-prod-qr-mod",
+  "version": 1,
+  "weekStart": ""
+}
