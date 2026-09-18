@@ -1,0 +1,389 @@
+[
+  {
+    "allValue": "-1",
+    "current": {
+      "selected": false,
+      "text": "All",
+      "value": "$__all"
+    },
+    "hide": 0,
+    "includeAll": true,
+    "label": "Tipo de producto",
+    "multi": false,
+    "name": "producto",
+    "options": [
+      {
+        "selected": true,
+        "text": "All",
+        "value": "$__all"
+      },
+      {
+        "selected": false,
+        "text": "Crédito",
+        "value": "Crédito"
+      },
+      {
+        "selected": false,
+        "text": "Débito",
+        "value": "Débito"
+      },
+      {
+        "selected": false,
+        "text": "Prepaga",
+        "value": "Prepaga"
+      },
+      {
+        "selected": false,
+        "text": "Naranja Pura",
+        "value": "Naranja Pura"
+      },
+      {
+        "selected": false,
+        "text": "Marcas Privadas",
+        "value": "Marcas Privadas"
+      },
+      {
+        "selected": false,
+        "text": "Indeterminado",
+        "value": "Indeterminado (Créd/Déb)"
+      },
+      {
+        "selected": false,
+        "text": "Otro",
+        "value": "Otro"
+      }
+    ],
+    "query": "Crédito : Crédito, Débito : Débito, Prepaga : Prepaga, Naranja Pura : Naranja Pura, Marcas Privadas : Marcas Privadas, Indeterminado : Indeterminado (Créd/Déb), Otro : Otro",
+    "queryValue": "",
+    "skipUrlSync": false,
+    "type": "custom"
+  },
+  {
+    "allValue": "-1",
+    "current": {
+      "selected": false,
+      "text": "All",
+      "value": "$__all"
+    },
+    "hide": 0,
+    "includeAll": true,
+    "label": "Plataforma de pago",
+    "multi": false,
+    "name": "plataforma",
+    "options": [
+      {
+        "selected": true,
+        "text": "All",
+        "value": "$__all"
+      },
+      {
+        "selected": false,
+        "text": "Paystore",
+        "value": "0001"
+      },
+      {
+        "selected": false,
+        "text": "Pos Legacy",
+        "value": "7001"
+      },
+      {
+        "selected": false,
+        "text": "Decidir",
+        "value": "8002"
+      },
+      {
+        "selected": false,
+        "text": "Laposweb",
+        "value": "9000"
+      },
+      {
+        "selected": false,
+        "text": "MELI",
+        "value": "3410"
+      },
+      {
+        "selected": false,
+        "text": "Cybersource",
+        "value": "1053"
+      },
+      {
+        "selected": false,
+        "text": "Geopagos",
+        "value": "0502"
+      },
+      {
+        "selected": false,
+        "text": "PayU",
+        "value": "0811"
+      },
+      {
+        "selected": false,
+        "text": "vtol Cloud",
+        "value": "0632"
+      },
+      {
+        "selected": false,
+        "text": "Lyra",
+        "value": "0612"
+      },
+      {
+        "selected": false,
+        "text": "Wondersoft",
+        "value": "0520"
+      },
+      {
+        "selected": false,
+        "text": "Telefonica-Movistar",
+        "value": "0102"
+      },
+      {
+        "selected": false,
+        "text": "Telecom-Personal",
+        "value": "0702"
+      },
+      {
+        "selected": false,
+        "text": "Cecabank-Telefónica",
+        "value": "0944"
+      },
+      {
+        "selected": false,
+        "text": "Farmacity",
+        "value": "0250"
+      },
+      {
+        "selected": false,
+        "text": "Cooperativa Obrera",
+        "value": "0456"
+      },
+      {
+        "selected": false,
+        "text": "Coto",
+        "value": "0210"
+      },
+      {
+        "selected": false,
+        "text": "Cencosud",
+        "value": "0917"
+      },
+      {
+        "selected": false,
+        "text": "Aerolíneas Argentinas",
+        "value": "0639"
+      },
+      {
+        "selected": false,
+        "text": "Buquebus",
+        "value": "0519"
+      },
+      {
+        "selected": false,
+        "text": "Duty Free Ezeiza",
+        "value": "0106"
+      },
+      {
+        "selected": false,
+        "text": "Alvear",
+        "value": "0610"
+      },
+      {
+        "selected": false,
+        "text": "Agropagos",
+        "value": "1313"
+      },
+      {
+        "selected": false,
+        "text": "Koin",
+        "value": "1118"
+      },
+      {
+        "selected": false,
+        "text": "Open Pay",
+        "value": "0930"
+      },
+      {
+        "selected": false,
+        "text": "PVS",
+        "value": "0521"
+      },
+      {
+        "selected": false,
+        "text": "Kilbel",
+        "value": "0955"
+      },
+      {
+        "selected": false,
+        "text": "Renner",
+        "value": "1555"
+      },
+      {
+        "selected": false,
+        "text": "Coop La Paz",
+        "value": "1536"
+      },
+      {
+        "selected": false,
+        "text": "SEPSA",
+        "value": "1548"
+      },
+      {
+        "selected": false,
+        "text": "Toledo",
+        "value": "1107"
+      },
+      {
+        "selected": false,
+        "text": "El Tunel",
+        "value": "0943"
+      },
+      {
+        "selected": false,
+        "text": "Arcoiris",
+        "value": "0926"
+      },
+      {
+        "selected": false,
+        "text": "Mariano Max",
+        "value": "9223"
+      },
+      {
+        "selected": false,
+        "text": "Mundo Maipu",
+        "value": "0512"
+      },
+      {
+        "selected": false,
+        "text": "XRP",
+        "value": "0008"
+      },
+      {
+        "selected": false,
+        "text": "Norauto",
+        "value": "0137"
+      },
+      {
+        "selected": false,
+        "text": "ShopGallery",
+        "value": "0143"
+      },
+      {
+        "selected": false,
+        "text": "Cabrales",
+        "value": "0703"
+      },
+      {
+        "selected": false,
+        "text": "Central Oeste",
+        "value": "0513"
+      },
+      {
+        "selected": false,
+        "text": "DLOCAL",
+        "value": "0540"
+      },
+      {
+        "selected": false,
+        "text": "Carrefour",
+        "value": "1055"
+      },
+      {
+        "selected": false,
+        "text": "1056",
+        "value": "1056"
+      },
+      {
+        "selected": false,
+        "text": "1057",
+        "value": "1057"
+      },
+      {
+        "selected": false,
+        "text": "Claro Billetera",
+        "value": "0495"
+      },
+      {
+        "selected": false,
+        "text": "Mobbex",
+        "value": "0507"
+      },
+      {
+        "selected": false,
+        "text": "Ticketera DF Entertainment",
+        "value": "0245"
+      },
+      {
+        "selected": false,
+        "text": "Cinemark",
+        "value": "1530"
+      },
+      {
+        "selected": false,
+        "text": "La Anonima",
+        "value": "1611"
+      },
+      {
+        "selected": false,
+        "text": "Shell Raizer Deheza",
+        "value": "0492"
+      },
+      {
+        "selected": false,
+        "text": "LIBRE (Con Tráfico)",
+        "value": "0962"
+      },
+      {
+        "selected": false,
+        "text": "0060",
+        "value": "0060"
+      }
+    ],
+    "query": "Paystore : 0001, Pos Legacy : 7001, Decidir : 8002, Laposweb : 9000, MELI : 3410, Cybersource : 1053, Geopagos : 0502, PayU : 0811, vtol Cloud : 0632, Lyra : 0612, Wondersoft : 0520, Telefonica-Movistar : 0102, Telecom-Personal : 0702, Cecabank-Telefónica : 0944, Farmacity : 0250, Cooperativa Obrera : 0456, Coto : 0210, Cencosud : 0917, Aerolíneas Argentinas : 0639, Buquebus : 0519, Duty Free Ezeiza : 0106, Alvear : 0610, Agropagos : 1313, Koin : 1118, Open Pay : 0930, PVS : 0521, Kilbel : 0955, Renner : 1555, Coop La Paz : 1536, SEPSA : 1548, Toledo : 1107, El Tunel : 0943, Arcoiris : 0926, Mariano Max : 9223, Mundo Maipu : 0512, XRP : 0008, Norauto : 0137, ShopGallery : 0143, Cabrales : 0703, Central Oeste : 0513, DLOCAL : 0540, Carrefour : 1055,1056,1057, Claro Billetera : 0495, Mobbex : 0507, Ticketera DF Entertainment : 0245, Cinemark : 1530, La Anonima : 1611, Shell Raizer Deheza : 0492, LIBRE (Con Tráfico) : 0962,0060",
+    "queryValue": "",
+    "skipUrlSync": false,
+    "type": "custom"
+  },
+  {
+    "allValue": "-1",
+    "current": {
+      "selected": false,
+      "text": "All",
+      "value": "$__all"
+    },
+    "hide": 0,
+    "includeAll": true,
+    "label": "Modalidad",
+    "multi": false,
+    "name": "modalidad",
+    "options": [
+      {
+        "selected": true,
+        "text": "All",
+        "value": "$__all"
+      },
+      {
+        "selected": false,
+        "text": "Presente",
+        "value": "Presente"
+      },
+      {
+        "selected": false,
+        "text": "E-commerce",
+        "value": "E-commerce"
+      },
+      {
+        "selected": false,
+        "text": "Débito Automático",
+        "value": "Débito Automático"
+      },
+      {
+        "selected": false,
+        "text": "Indeterminado",
+        "value": "Indeterminado"
+      }
+    ],
+    "query": "Presente : Presente, E-commerce : E-commerce, Débito Automático : Débito Automático, Indeterminado : Indeterminado",
+    "queryValue": "",
+    "skipUrlSync": false,
+    "type": "custom"
+  }
+]
