@@ -25,7 +25,7 @@ def tablas(q):
     return q.replace("prisma_ab_analytics_prod_db.establecimiento",tabla(EST))
 n=0
 for esc,v in escenarios.items():
-    for p in d["panels"]:
+    for p in [x for q in d["panels"] for x in [q] + (q.get("panels") or [])]:
         for i,t in enumerate(p.get("targets") or []):
             if t.get("rawSQL"):
                 open(f"{out}/{esc}_p{p['id']:05d}_{i}.sql","w",encoding="utf-8").write(tablas(interp(t["rawSQL"],v))); n+=1

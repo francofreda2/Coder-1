@@ -13,7 +13,7 @@ los paneles (traducido de Trino a DuckDB con sqlglot):
   - La ABT llega hasta 15:52 UTC; "ahora" = 16:00 UTC (8 min de atraso).
 
     pip install duckdb sqlglot pytz
-    python3 test_desvios_noc.py
+    python3 test_desvios_noc.py [tablero.json]   (por defecto la v17.1)
 
 El panel 38 (lee ctx_autorizaciones_eps) no se ejecuta: esa tabla no existe aca.
 """
@@ -56,7 +56,8 @@ con.execute("INSERT INTO payway_poststage_prod_db.abt0_ctx_livemonitoring SELECT
 con.execute("UPDATE payway_poststage_prod_db.abt0_ctx_livemonitoring SET codrespuestaiss=NULLIF(codrespuestaiss,''), nrorechazointerno=NULLIF(nrorechazointerno,'')")
 
 
-d=json.load(open("desvios_v17.1_noc.json",encoding="utf-8"))
+d=json.load(open(sys.argv[1] if len(sys.argv)>1 else "desvios_v17.1_noc.json",encoding="utf-8"))
+d["panels"]=[x for q in d["panels"] for x in [q] + (q.get("panels") or [])]
 P={p["id"]:p for p in d["panels"]}
 def interp(s,frm,to,vals):
     s=s.replace("$__timeFrom()","TIMESTAMP '%s'"%frm).replace("$__timeTo()","TIMESTAMP '%s'"%to)
@@ -117,7 +118,7 @@ check(fila(c, r[-1])["Total TRX/min"] == 35.0, "ultimo bucket parcial no dibuja 
 
 print("Gateways (1101 / 1103)")
 c, r = run(1101, res="5", frm="2026-09-24 12:30:00", to="2026-09-24 14:00:00")
-dec = {str(x[0])[11:16]: x[2] for x in r if x[1] == "Decidir (8002)"}
+dec = {str(f["time"])[11:16]: f["trx_min"] for f in (fila(c, x) for x in r) if f["metric"] == "Decidir (8002)"}
 check(dec["13:00"] == 0.0 and dec["13:35"] == 0.0 and dec["13:40"] == 10.0,
       "Decidir baja a 0 a las 13:00 y vuelve a las 13:40")
 c, r = run(1103, to="2026-09-24 13:20:00")
@@ -140,7 +141,25 @@ for p in d["panels"]:
                 n += 1
             except Exception as e:
                 fallas.append("panel %s res %s: %s" % (p["id"], res, str(e)[:200]))
-check(n == 144, "%d ejecuciones sin error (36 consultas x 4 resoluciones)" % n)
+esperadas = 4 * sum(1 for p in d["panels"] for t in (p.get("targets") or [])
+                    if t.get("rawSQL") and "ctx_autorizaciones_eps" not in t["rawSQL"])
+check(n == esperadas, "%d ejecuciones sin error (%d consultas x 4 resoluciones)" % (n, esperadas // 4))
+
+if 5 in P:
+    print("v18: TAA en KPIs y resumen del rango")
+    k = fila(*[(c, r[0]) for c, r in [run(1000)]][0])
+    check(k["taa_15"] is not None and 60 <= k["taa_15"] <= 95, "TAA 15 min calculada (%s%%)" % k["taa_15"])
+    check(k["dtaa_pp"] is not None and k["dtaa_pp"] < -5,
+          "Δ TAA vs D-1 negativa por Paystore degradado (%s pp)" % k["dtaa_pp"])
+    c, r = run(5)
+    res = fila(c, r[0])
+    check(set(res) == {"TAA", "Total TRX", "Denegadas", "Tasa de rechazo"},
+          "resumen del rango: TAA, Total TRX, Denegadas, Tasa de rechazo")
+    check(res["Total TRX"] == sum(run(10, 0, res="15")[1][i][4] for i in range(len(run(10, 0, res="15")[1]))),
+          "Total TRX del resumen = suma del Total del panel 10 (%s)" % res["Total TRX"])
+    check(abs(res["TAA"] + res["Tasa de rechazo"] - 100) < 0.02, "TAA + tasa de rechazo = 100%")
+    c, r = run(1000, cuit="$__all")
+    check(fila(c, r[0])["trx_min"] == 35.0, "CUIT '$__all' (link desde One page) = todos")
 
 print("\n%s" % ("TODO OK" if not fallas else "FALLAS: %d" % len(fallas)))
 sys.exit(1 if fallas else 0)

@@ -186,11 +186,13 @@ def sql_kpis():
         "WITH " + GM + ",\n"
         "lim AS (SELECT m AS gm, LEAST(date_trunc('minute',CAST($__timeTo() AS timestamp)), m) AS r FROM gm),\n"
         + base(VENTANA_ESTADO, PART_ESTADO) + ",\n"
-        "x AS (SELECT ts FROM filt WHERE cmsg<>'1420'),\n"
+        "x AS (SELECT ts, cr FROM filt WHERE cmsg<>'1420'),\n"
         "k AS (SELECT\n"
         "  SUM(CASE WHEN ts >= l.r - INTERVAL '5' MINUTE AND ts < l.r THEN 1 ELSE 0 END) AS n5,\n"
         "  SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE AND ts < l.r THEN 1 ELSE 0 END) AS n15,\n"
         "  SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE - INTERVAL '1' DAY AND ts < l.r - INTERVAL '1' DAY THEN 1 ELSE 0 END) AS n15d1,\n"
+        "  SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE AND ts < l.r AND cr IN" + APROB + " THEN 1 ELSE 0 END) AS a15,\n"
+        "  SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE - INTERVAL '1' DAY AND ts < l.r - INTERVAL '1' DAY AND cr IN" + APROB + " THEN 1 ELSE 0 END) AS a15d1,\n"
         "  MAX(CASE WHEN ts >= l.r - INTERVAL '6' HOUR AND ts < l.r THEN ts END) AS lt\n"
         "  FROM x CROSS JOIN lim l)\n"
         "SELECT\n"
@@ -199,7 +201,9 @@ def sql_kpis():
         "  CAST(" + BK + " AS varchar) || ' min' AS resolucion,\n"
         "  ROUND(k.n5 / 5.0, 1) AS trx_min,\n"
         "  ROUND(100.0 * k.n15 / NULLIF(k.n15d1, 0), 1) AS pct_vs_d1,\n"
-        "  date_diff('minute', k.lt, l.r - INTERVAL '1' MINUTE) AS silencio_min\n"
+        "  date_diff('minute', k.lt, l.r - INTERVAL '1' MINUTE) AS silencio_min,\n"
+        "  ROUND(100.0 * k.a15 / NULLIF(k.n15, 0), 2) AS taa_15,\n"
+        "  ROUND(100.0 * k.a15 / NULLIF(k.n15, 0) - 100.0 * k.a15d1 / NULLIF(k.n15d1, 0), 1) AS dtaa_pp\n"
         "FROM lim l CROSS JOIN k"
     )
 
@@ -256,7 +260,7 @@ def sql_gateways_series(vars_abt):
         "  SUM(CASE WHEN cr IN" + APROB + " THEN 1 ELSE 0 END) AS aprob\n"
         "  FROM x WHERE gw IN (SELECT gw FROM top) GROUP BY 1, 2),\n"
         + GRID + "\n"
-        "SELECT g.time, " + GW_NOMBRE % ("t.gw", "t.gw") + " AS metric,\n"
+        "SELECT g.time, " + GW_NOMBRE % ("t.gw", "t.gw") + " AS metric, t.gw AS cod,\n"
         "  ROUND(1.0 * COALESCE(a.total,0) / NULLIF(" + MINUTOS + ",0), 1) AS trx_min,\n"
         "  ROUND(100.0 * a.aprob / NULLIF(a.total,0), 2) AS taa\n"
         "FROM grid g CROSS JOIN lim l CROSS JOIN top t\n"
@@ -292,7 +296,8 @@ def sql_gateways_estado(vars_abt):
         "  ROUND(100.0 * a.ap / NULLIF(a.n,0) - 100.0 * d.ap / NULLIF(d.n,0), 1) AS \"Δ TAA (pp)\",\n"
         "  date_format(u.lt - INTERVAL '3' HOUR, '%H:%i') AS \"Último tráfico (hs)\",\n"
         "  date_diff('minute', u.lt, l.r - INTERVAL '1' MINUTE) AS \"Silencio (min)\",\n"
-        "  COALESCE(u.n6h,0) AS \"TRX últ. 6 h\"\n"
+        "  COALESCE(u.n6h,0) AS \"TRX últ. 6 h\",\n"
+        "  g.gw AS cod\n"
         "FROM gws g CROSS JOIN lim l\n"
         "LEFT JOIN act a ON a.gw = g.gw\n"
         "LEFT JOIN d1 d ON d.gw = g.gw\n"
@@ -407,7 +412,7 @@ def filtro_campos(nombres):
 
 
 PARTICION = {"id": "partitionByValues",
-             "options": {"fields": ["metric"], "keepFields": False,
+             "options": {"fields": ["metric", "cod"], "keepFields": False,
                          "naming": {"asLabels": True}}}
 
 
@@ -509,7 +514,7 @@ def paneles_noc(vars_abt):
         "vuelve. Para mirar uno solo, usar el filtro Plataforma de pago.",
         {"h": 9, "w": 12, "x": 0, "y": y},
         [target(sql_gateways_series(vars_abt))], "short",
-        transformations=[filtro_campos(["time", "metric", "trx_min"]), PARTICION],
+        transformations=[filtro_campos(["time", "metric", "cod", "trx_min"]), PARTICION],
         extra_defaults={"displayName": "${__field.labels.metric}"},
         legend_calcs=["lastNotNull", "min", "mean"], legend_table=True,
         custom={"axisSoftMin": 0}))
@@ -519,7 +524,7 @@ def paneles_noc(vars_abt):
         "en la línea es un bucket sin tráfico: mirarlo junto con el volumen.",
         {"h": 9, "w": 12, "x": 12, "y": y},
         [target_dash(1101)], "percent", datasource=dict(DS_DASH),
-        transformations=[filtro_campos(["time", "metric", "taa"]), PARTICION],
+        transformations=[filtro_campos(["time", "metric", "cod", "taa"]), PARTICION],
         extra_defaults={"displayName": "${__field.labels.metric}", "decimals": 1},
         legend_calcs=["lastNotNull", "min", "mean"], legend_table=True,
         custom={"axisSoftMax": 100}))
@@ -560,6 +565,8 @@ def paneles_noc(vars_abt):
                 {"matcher": {"id": "byRegexp", "options": "^TAA.*"},
                  "properties": [{"id": "unit", "value": "percent"},
                                 {"id": "decimals", "value": 2}]},
+                {"matcher": {"id": "byName", "options": "cod"},
+                 "properties": [{"id": "custom.hidden", "value": True}]},
                 {"matcher": {"id": "byName", "options": "Gateway"},
                  "properties": [{"id": "custom.width", "value": 240}]},
             ]},
