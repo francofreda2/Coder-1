@@ -95,8 +95,12 @@ FILT = ("filt AS (SELECT * FROM b WHERE 1=1 "
         "AND ('${motivo_emisor:text}'='All' OR ciss_norm IN (${motivo_emisor:sqlstring})) "
         "AND ('${motivo_adqte:text}'='All' OR nri IN (${motivo_adqte:sqlstring})))")
 
+# En ABT0 minuto_utc es timestamp(6) with time zone, y sequence() de Trino no
+# acepta timestamps con zona. Todo el SQL NOC trabaja con timestamp UTC sin zona.
+TS_UTC = "CAST(%s AT TIME ZONE 'UTC' AS timestamp)"
+
 # Ultimo minuto cargado en ABT0, sin filtros y sin depender del rango elegido.
-GM = ("gm AS (SELECT MAX(minuto_utc) AS m FROM " + ABT0 +
+GM = ("gm AS (SELECT " + TS_UTC % "MAX(minuto_utc)" + " AS m FROM " + ABT0 +
       " WHERE fecha_particion >= date_format(date_add('day',-1,current_date),'%Y-%m-%d'))")
 
 # Ventanas estaticas (solo macros) para que Athena pode particiones y row groups:
@@ -123,7 +127,7 @@ def base(ventana, particiones):
     """CTE b + filt con TODOS los filtros del tablero (los mismos que la v17.0)."""
     lo, hi = particiones
     return (
-        "b AS (SELECT a.minuto_utc AS ts, TRIM(a.cod_respuesta) AS cr, "
+        "b AS (SELECT " + TS_UTC % "a.minuto_utc" + " AS ts, TRIM(a.cod_respuesta) AS cr, "
         "TRIM(a.cod_tipo_mensaje) AS cmsg, NULLIF(TRIM(a.nrorechazointerno),'') AS nri, "
         + MARCA_F + " AS marca_f, TRIM(a.codbancoemisor) AS cbe_f, "
         + CISS_NORM + " AS ciss_norm, " + GW + " AS gw, a.latencia_ms AS lat "

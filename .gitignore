@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+trino_check/target/
+trino_check/cp.txt
+trino_check/sql_out/

@@ -12,7 +12,7 @@ los paneles (traducido de Trino a DuckDB con sqlglot):
   - 24/09 desde 15:00 UTC: Paystore con TAA degradada (60%).
   - La ABT llega hasta 15:52 UTC; "ahora" = 16:00 UTC (8 min de atraso).
 
-    pip install duckdb sqlglot
+    pip install duckdb sqlglot pytz
     python3 test_desvios_noc.py
 
 El panel 38 (lee ctx_autorizaciones_eps) no se ejecuta: esa tabla no existe aca.
@@ -24,10 +24,11 @@ import duckdb,sqlglot
 random.seed(7)
 SP=tempfile.mkdtemp()+os.sep
 con=duckdb.connect()
+con.execute("SET TimeZone='UTC'")  # en ABT0 minuto_utc es timestamp(6) with time zone
 con.execute("CREATE SCHEMA payway_poststage_prod_db; CREATE SCHEMA prisma_ab_analytics_prod_db;")
 con.execute("CREATE TABLE prisma_ab_analytics_prod_db.establecimiento(nro_establecimiento INTEGER, cuit_establecimiento_host VARCHAR, cod_debito_automatico_estab VARCHAR)")
 con.execute("INSERT INTO prisma_ab_analytics_prod_db.establecimiento VALUES (111,'30-11111111-1','0'),(222,'30-22222222-2','1')")
-COLS=["minuto_utc TIMESTAMP","fecha_particion VARCHAR","cuit VARCHAR","nro_establecimiento VARCHAR","marca VARCHAR","instrmtyp VARCHAR",
+COLS=["minuto_utc TIMESTAMPTZ","fecha_particion VARCHAR","cuit VARCHAR","nro_establecimiento VARCHAR","marca VARCHAR","instrmtyp VARCHAR",
  "cod_respuesta VARCHAR","cod_tipo_mensaje VARCHAR","cod_proceso_autorizacion VARCHAR","codrespuestaiss VARCHAR","nrorechazointerno VARCHAR",
  "codbancoemisor VARCHAR","programaperiferiaorigen VARCHAR","coddebitoautomatico VARCHAR","codidentpresenciacliente VARCHAR",
  "codmetodoingresomovimiento VARCHAR","latencia_ms BIGINT","fill9 VARCHAR"]

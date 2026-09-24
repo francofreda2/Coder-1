@@ -104,15 +104,42 @@ La lógica de cuadrantes, rechazos y TAA no se tocó.
 
 - `python3 check_desvios_noc.py`: 18 chequeos de estructura (ids, superposición
   de paneles, referencias entre paneles, filtros presentes en las consultas nuevas).
-- `python3 test_desvios_noc.py` (requiere `pip install duckdb sqlglot`): arma
+- `python3 test_desvios_noc.py` (requiere `pip install duckdb sqlglot pytz`): arma
   una ABT0 sintética con un incidente conocido (caída total de 5 min, Decidir
   caído 40 min, Paystore con TAA degradada, ABT con 8 min de atraso) y ejecuta
   el SQL real de los paneles. 16 chequeos sobre los números que tiene que dar,
   y las 36 consultas corridas en 4 resoluciones sin error.
 
-Lo que la prueba sintética no cubre es el comportamiento contra el Athena real
-(tipos exactos, tiempos, volúmenes). La primera corrida en Grafana es la que lo
-confirma.
+- `trino_check/run.sh` (requiere Java 21 y Maven): pasa el SQL de todos los
+  paneles, tal como lo interpola Grafana, por el analizador de **Trino 446**, el
+  motor de Athena v3. Detecta errores de tipos y funciones antes de importar.
+  Prueba `minuto_utc` como `timestamp(6) with time zone` (el tipo real en ABT0)
+  y sin zona. Resultado: 74/74 consultas OK.
+
+### Error corregido: `FUNCTION_NOT_FOUND ... for function sequence`
+
+La primera versión de la v17.1 fallaba en Athena en los paneles 1010
+(Procesamiento) y 1101 (Gateways) con:
+
+```
+FUNCTION_NOT_FOUND: Unexpected parameters (timestamp(6) with time zone,
+timestamp(6) with time zone, interval day to second) for function sequence
+```
+
+En ABT0, `minuto_utc` es `timestamp(6) with time zone`. Al combinarlo con el
+rango de Grafana (que llega como `TIMESTAMP` sin zona), el resultado pasaba a
+"con zona", y `sequence()` de Trino no acepta timestamps con zona. La prueba en
+DuckDB no lo detectaba porque simulaba la columna sin zona.
+
+La corrección normaliza `minuto_utc` a timestamp UTC sin zona en el origen de
+las consultas NOC: `CAST(minuto_utc AT TIME ZONE 'UTC' AS timestamp)`. Funciona
+con cualquiera de los dos tipos y deja bien las horas en hora Argentina.
+El error se reprodujo con el analizador de Trino (misma línea y columna que en
+Grafana) y la corrección se verificó ahí; la prueba en DuckDB ahora usa la
+columna con zona, como en producción.
+
+Lo que ninguna de las pruebas cubre es el comportamiento contra el Athena real
+con datos reales (tiempos de respuesta, volúmenes).
 
 ## Archivos
 
@@ -122,3 +149,4 @@ confirma.
 | `build_desvios_noc.py` | Lo genera a partir de `desvios_v17.0_abt.json` |
 | `check_desvios_noc.py` | Validación estructural |
 | `test_desvios_noc.py` | Prueba de ejecución con datos sintéticos |
+| `trino_check/` | Análisis del SQL con el motor Trino 446 (Athena v3) |
