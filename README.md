@@ -42,5 +42,8 @@ desvios_v16.8_origen.json ──build_desvios_abt.py──▶ desvios_v17.0_abt.
 ## Carpetas
 
 - `trino_check/`: analizador de SQL con Trino.
+- `prompts/`: prompts para Claude Code. `rca_alertas_jev.md` arma el análisis de
+  causa raíz de alertas del NOC con Jev; se usa en un clon local con acceso a
+  Athena y la key de TypeSafe.
 - `historico/`: versiones y scripts reemplazados (línea v2.x y el tablero
   suelto de Producto / QR / Modalidades, que quedó integrado en Desvíos).
