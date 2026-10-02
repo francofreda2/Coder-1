@@ -15,16 +15,16 @@ import sys
 
 UID_DESVIOS = "payway-desvios"
 
-# Variables con la misma definicion en los dos tableros. 'marca' no se pasa:
-# One page usa VISA / CABAL_DISCOVER / OTRAS y Desvios Visa / Cabal / Otra.
-URL_DESVIOS = ("/d/%s/?var-cuit=${cuit:raw}"
-               "&${plataforma:queryparam}&${producto:queryparam}&${modalidad:queryparam}"
+# Variables con la misma definicion en los dos tableros (marca: lista comun del
+# 02/10/2026, VISA ... PRIVADAS, OTRAS).
+URL_DESVIOS = ("/d/%s/?var-cuit=${cuit:raw}&${plataforma:queryparam}&${marca:queryparam}"
+               "&${producto:queryparam}&${modalidad:queryparam}"
                % UID_DESVIOS)
 
 LINKS = [
     {"asDropdown": False, "icon": "dashboard", "includeVars": False, "keepTime": True,
      "tags": [], "targetBlank": False, "title": "Desvíos · NOC (análisis de la caída)",
-     "tooltip": "Mismo rango, CUIT, gateway, producto y modalidad",
+     "tooltip": "Mismo rango, CUIT, gateway, marca, producto y modalidad",
      "type": "link", "url": URL_DESVIOS},
     {"asDropdown": False, "icon": "sync", "includeVars": False, "keepTime": True,
      "tags": [], "targetBlank": False, "title": "Limpiar filtros",

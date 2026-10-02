@@ -37,6 +37,8 @@ import json
 import re
 import sys
 
+import logica_marcas as lm
+
 ENTRADA_DEFAULT = "desvios_v16.8_origen.json"
 VARS_DEFAULT = "abt_vars_nuevos.json"
 SALIDA_DEFAULT = "desvios_v17.0_abt.json"
@@ -141,15 +143,7 @@ def filtros_nuevos(col_estab, col_instrmtyp):
     return (
         "\n    -- FILTRO Tipo de producto"
         "\n    AND ( '${producto:raw}' IN ('-1','','$__all')"
-        "\n          OR (CASE"
-        "\n                   WHEN TRIM(" + col_instrmtyp + ") IN ('VD','MD','MS') THEN 'Débito'"
-        "\n                   WHEN TRIM(" + col_instrmtyp + ") IN ('V6','VB','VN','VC','MC','AX','PA') THEN 'Crédito'"
-        "\n                   WHEN TRIM(" + col_instrmtyp + ") IN ('VK','SR','MK') THEN 'Prepaga'"
-        "\n                   WHEN TRIM(" + col_instrmtyp + ") = 'PB' THEN 'Marcas Privadas'"
-        "\n                   WHEN TRIM(" + col_instrmtyp + ") = 'PN' THEN 'Naranja Pura'"
-        "\n                   WHEN TRIM(" + col_instrmtyp + ") = 'UC' THEN 'Indeterminado (Créd/Déb)'"
-        "\n                   ELSE 'Otro'"
-        "\n              END) = '${producto:raw}' )"
+        "\n          OR (" + lm.producto(col_instrmtyp) + ") = '${producto:raw}' )"
         "\n    -- FILTRO Plataforma de pago (la variable trae el sufijo de 4 digitos)"
         "\n    AND ( '${plataforma:raw}' IN ('-1','','$__all')"
         "\n          OR contains(split('${plataforma:raw}', ','),"
@@ -181,6 +175,83 @@ def join_dafil(col_estab):
         "TRIM(COALESCE(e.cod_debito_automatico_estab,'')) = '1') dafil"
         " ON dafil.nro_establecimiento = TRY_CAST(TRIM(" + col_estab + ") AS INTEGER)"
     )
+
+
+# ---------------------------------------------------------------------------
+# 5. Marca y tipo de producto: lista comun (logica_marcas.py)
+# ---------------------------------------------------------------------------
+# v16.8 clasificaba la marca con su propia lista (sin MA, MX, AE, CB, UP, y con
+# Naranja y las privadas en 'Otra') y los paneles de detalle por marca y por
+# producto elegian su segmento con listas propias, distintas de las del filtro.
+
+MARCA_V16 = ("CASE WHEN a.{c} IN('VD','VK','V6','VB','VN','SR','VC') THEN 'Visa' "
+             "WHEN a.{c} IN('MD','MC','MS','MK') THEN 'Mastercard' WHEN a.{c}='AX' THEN 'Amex' "
+             "WHEN a.{c}='PA' THEN 'Cabal' WHEN a.{c}='UC' THEN 'UPI' ELSE {e} END")
+
+# Panel de detalle -> (filtro propio de v16.8, dimension, valor de la lista comun)
+SEGMENTOS = {
+    721: ("a.instrmtyp IN('VD','VK','V6','VB','VN','SR','VC')", "marca", "VISA"),
+    101: ("a.instrmtyp IN('MD','MC','MS','MK')", "marca", "MASTERCARD"),
+    102: ("a.instrmtyp IN('PA')", "marca", "CABAL_DISCOVER"),
+    103: ("a.instrmtyp IN('AX')", "marca", "AMEX"),
+    104: ("a.instrmtyp IN('UC')", "marca", "UPI"),
+    110: ("a.instrmtyp IN('VC','MC','AX','VB','MS','AC')", "producto", "Crédito"),
+    111: ("a.instrmtyp IN('VD','MD','PA','SD','BD','VN')", "producto", "Débito"),
+    112: ("a.instrmtyp IN('VK','MK','PK','UC','SR','V6')", "producto", "Prepaga"),
+}
+
+COLORES_MARCA = {"VISA": "#1a56db", "MASTERCARD": "#eb4034", "CABAL_DISCOVER": "#a78bfa",
+                 "AMEX": "#34d399", "UPI": "#fbbf24", "NARANJA": "#ff7f0e",
+                 "PRIVADAS": "#e879f9"}
+VIEJA_A_NUEVA = {"Visa": "VISA", "Mastercard": "MASTERCARD", "Cabal": "CABAL_DISCOVER",
+                 "Amex": "AMEX", "UPI": "UPI"}
+
+
+def marcas_en_sql(sql, sobre_abt):
+    """Reemplaza la clasificacion de marca de v16.8 por la lista comun."""
+    n = 0
+    for e in ("'Otra'", "NULL"):
+        viejo = MARCA_V16.format(c="instrmtyp" if sobre_abt else "INSTRMTYP", e=e)
+        nuevo = lm.marca_abt0() if sobre_abt else lm.marca_ctx("a.INSTRMTYP")
+        n += sql.count(viejo)
+        sql = sql.replace(viejo, nuevo)
+    return sql, n
+
+
+def marcas_en_panel(panel):
+    """Ajustes por panel: segmento de los detalles y columnas de 'TAA por marca'."""
+    pid = panel["id"]
+    if pid in SEGMENTOS:
+        viejo, dim, valor = SEGMENTOS[pid]
+        expr = lm.marca_abt0() if dim == "marca" else lm.producto()
+        for t in panel["targets"]:
+            assert t["rawSQL"].count("AND " + viejo) >= 1, (pid, viejo)
+            t["rawSQL"] = t["rawSQL"].replace("AND " + viejo, "AND (%s) = '%s'" % (expr, valor))
+    if pid == 112:
+        panel["title"] = panel["title"].replace("Prepago", "Prepaga")
+        for t in panel["targets"]:
+            t["rawSQL"] = t["rawSQL"].replace('"TAA Prepago"', '"TAA Prepaga"')
+        for ov in panel["fieldConfig"]["overrides"]:
+            if ov["matcher"]["options"] == "TAA Prepago":
+                ov["matcher"]["options"] = "TAA Prepaga"
+    if pid == 102:
+        panel["title"] = panel["title"].replace("Cabal", "Cabal / Discover")
+    if pid == 30:
+        t = panel["targets"][0]
+        sql = t["rawSQL"]
+        ini = sql.index("ROUND(100.0*SUM(CASE WHEN marca='Visa'")
+        fin = sql.index('AS "UPI"') + len('AS "UPI"')
+        cols = ",".join(
+            "ROUND(100.0*SUM(CASE WHEN marca='{v}' AND cr IN('0000','0400','0900') THEN 1 ELSE 0 END)"
+            "/NULLIF(SUM(CASE WHEN marca='{v}' THEN 1 ELSE 0 END),0),2) AS \"{v}\"".format(v=v)
+            for v, _ in lm.MARCAS if v != "OTRAS")
+        t["rawSQL"] = sql[:ini] + cols + sql[fin:]
+        textos = dict(lm.MARCAS)
+        panel["fieldConfig"]["overrides"] = [
+            {"matcher": {"id": "byName", "options": v},
+             "properties": [{"id": "color", "value": {"fixedColor": c, "mode": "fixed"}},
+                            {"id": "displayName", "value": textos[v]}]}
+            for v, c in COLORES_MARCA.items()]
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +339,8 @@ def main():
             # todos los filtros, incluidos los tres nuevos.
             sobre_abt = "a.nrotarjeta" not in sql
             nuevo, info = transformar(sql, sobre_abt)
+            nuevo, n_marca = marcas_en_sql(nuevo, sobre_abt)
+            assert n_marca >= 1, "panel %s sin clasificacion de marca" % panel["id"]
             tgt["rawSQL"] = nuevo
             if sobre_abt:
                 n_abt += 1
@@ -281,8 +354,14 @@ def main():
                     "Tipo de producto, Plataforma de pago y Modalidad."
                 ).strip()
 
+    for panel in dash.get("panels", []):
+        marcas_en_panel(panel)
+
     # --- templating ------------------------------------------------------
     lista = dash.setdefault("templating", {}).setdefault("list", [])
+    for i, v in enumerate(lista):
+        if v.get("name") == "marca":
+            lista[i] = lm.variable_marca(v)
     existentes = {v.get("name") for v in lista}
     agregadas = []
     for v in vars_nuevas:

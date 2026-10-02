@@ -37,6 +37,7 @@ import sys
 
 from build_desvios_abt import (ABT0, ANCLA, CUIT_ABT, EXCL_ABT, filtros_nuevos,
                                join_dafil)
+import logica_marcas as lm
 
 ENTRADA = "desvios_v17.0_abt.json"
 VARS_ABT = "abt_vars_nuevos.json"
@@ -77,10 +78,7 @@ def part(ts):
     return "date_format(date_add('hour',-3,%s),'%%Y-%%m-%%d')" % ts
 
 
-MARCA_F = ("CASE WHEN a.instrmtyp IN('VD','VK','V6','VB','VN','SR','VC') THEN 'Visa' "
-           "WHEN a.instrmtyp IN('MD','MC','MS','MK') THEN 'Mastercard' "
-           "WHEN a.instrmtyp='AX' THEN 'Amex' WHEN a.instrmtyp='PA' THEN 'Cabal' "
-           "WHEN a.instrmtyp='UC' THEN 'UPI' ELSE 'Otra' END")
+MARCA_F = lm.marca_abt0()
 CISS_NORM = ("CASE WHEN length(TRIM(a.codrespuestaiss))=1 THEN '0'||TRIM(a.codrespuestaiss) "
              "WHEN length(TRIM(a.codrespuestaiss))>=2 THEN "
              "substr(TRIM(a.codrespuestaiss),length(TRIM(a.codrespuestaiss))-1,2) "
@@ -188,11 +186,11 @@ def sql_kpis():
         + base(VENTANA_ESTADO, PART_ESTADO) + ",\n"
         "x AS (SELECT ts, cr FROM filt WHERE cmsg<>'1420'),\n"
         "k AS (SELECT\n"
-        "  SUM(CASE WHEN ts >= l.r - INTERVAL '5' MINUTE AND ts < l.r THEN 1 ELSE 0 END) AS n5,\n"
-        "  SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE AND ts < l.r THEN 1 ELSE 0 END) AS n15,\n"
-        "  SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE - INTERVAL '1' DAY AND ts < l.r - INTERVAL '1' DAY THEN 1 ELSE 0 END) AS n15d1,\n"
-        "  SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE AND ts < l.r AND cr IN" + APROB + " THEN 1 ELSE 0 END) AS a15,\n"
-        "  SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE - INTERVAL '1' DAY AND ts < l.r - INTERVAL '1' DAY AND cr IN" + APROB + " THEN 1 ELSE 0 END) AS a15d1,\n"
+        "  COALESCE(SUM(CASE WHEN ts >= l.r - INTERVAL '5' MINUTE AND ts < l.r THEN 1 ELSE 0 END), 0) AS n5,\n"
+        "  COALESCE(SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE AND ts < l.r THEN 1 ELSE 0 END), 0) AS n15,\n"
+        "  COALESCE(SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE - INTERVAL '1' DAY AND ts < l.r - INTERVAL '1' DAY THEN 1 ELSE 0 END), 0) AS n15d1,\n"
+        "  COALESCE(SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE AND ts < l.r AND cr IN" + APROB + " THEN 1 ELSE 0 END), 0) AS a15,\n"
+        "  COALESCE(SUM(CASE WHEN ts >= l.r - INTERVAL '15' MINUTE - INTERVAL '1' DAY AND ts < l.r - INTERVAL '1' DAY AND cr IN" + APROB + " THEN 1 ELSE 0 END), 0) AS a15d1,\n"
         "  MAX(CASE WHEN ts >= l.r - INTERVAL '6' HOUR AND ts < l.r THEN ts END) AS lt\n"
         "  FROM x CROSS JOIN lim l)\n"
         "SELECT\n"

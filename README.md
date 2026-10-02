@@ -5,7 +5,6 @@
 | Tablero | Archivo | uid |
 |---|---|---|
 | **Desvíos · NOC** (vigente) | `desvios_v18.json` | `payway-desvios` |
-| One page live monitoring, con links a Desvíos | `one_page_live_monitoring_con_links.json` | `payway-tx-v21` |
 
 En Grafana: **Dashboards → New → Import → Upload JSON**.
 
@@ -13,13 +12,20 @@ En Grafana: **Dashboards → New → Import → Upload JSON**.
   el mismo lugar y no rompen links ni favoritos. Las versiones anteriores
   (`desvios-v17-noc`, `desvios-v17-abt`, `desvios-v16-7`) se pueden borrar de
   Grafana una vez importada la v18.
-- `one_page_live_monitoring_con_links.json` es el tablero de Observabilidad tal
-  como estaba, con dos links agregados arriba (nada más). Importarlo **reemplaza**
-  el que está en Grafana. Si ese tablero cambió desde entonces, en lugar de
-  importar este archivo conviene exportar el actual y correr
-  `python3 add_links_live_monitoring.py exportado.json salida.json`.
+- **One page live monitoring** (de Observabilidad): para agregarle los links de
+  ida y vuelta, exportar la versión vigente (2.6.1 o posterior) y correr
+  `python3 add_links_live_monitoring.py exportado.json salida.json`. Solo agrega
+  dos links arriba; no toca paneles, SQL ni variables.
 
 Guía de uso: `DOC_desvios_v18.md`.
+
+## Marcas y tipo de producto
+
+`logica_marcas.py` es la lista común de marca y tipo de producto por
+`instrmtyp` (`8-LOGICA-COMPARTIDA/marcas/`, 02/10/2026: PB, PC, PM y PP son
+Marcas Privadas). Todos los generadores la toman de ahí, así el filtro y el
+desglose usan la misma lista. Si la lista cambia, se cambia ese archivo y se
+regenera.
 
 ## Cómo se genera
 

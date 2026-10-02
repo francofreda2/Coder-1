@@ -10,6 +10,7 @@ los paneles (traducido de Trino a DuckDB con sqlglot):
   - 24/09 13:05-13:10 UTC: caida total (cero transacciones).
   - 24/09 13:00-13:40 UTC: Decidir sin trafico.
   - 24/09 desde 15:00 UTC: Paystore con TAA degradada (60%).
+  - Pos Legacy usa tarjetas PC (marca privada) que el ETL de ABT0 manda como OTRAS.
   - La ABT llega hasta 15:52 UTC; "ahora" = 16:00 UTC (8 min de atraso).
 
     pip install duckdb sqlglot pytz
@@ -47,7 +48,8 @@ with open(SP+"abt0.csv","w",newline="") as f:
             for i in range(k):
                 p=0.6 if (today and gw=="0001" and t>=dt.datetime(2026,9,24,15,0)) else 0.9
                 ok=random.random()<p
-                w.writerow([t,fp,"30111111111","111","VISA","VC","0000" if ok else "0051","1100","00","" if ok else "51","","7","APP"+gw,"0","8" if gw=="8002" else "1","1",random.randint(200,900),"x"]); n+=1
+                marca,tipo=("OTRAS","PC") if gw=="7001" else ("VISA","VC")   # PC: privada; el ETL la manda como OTRAS
+                w.writerow([t,fp,"30111111111","111",marca,tipo,"0000" if ok else "0051","1100","00","" if ok else "51","","7","APP"+gw,"0","8" if gw=="8002" else "1","1",random.randint(200,900),"x"]); n+=1
         if not (today and dt.datetime(2026,9,24,13,5)<=t<dt.datetime(2026,9,24,13,10)):
             w.writerow([t,fp,"30111111111","111","VISA","VC","0000","1420","00","","","7","APP0001","0","1","1",300,"x"]); n+=1
         t+=dt.timedelta(minutes=1)
@@ -63,15 +65,15 @@ def interp(s,frm,to,vals):
     s=s.replace("$__timeFrom()","TIMESTAMP '%s'"%frm).replace("$__timeTo()","TIMESTAMP '%s'"%to)
     def rep(m):
         name,fmt=m.group(1),m.group(2)
-        if fmt=="text": return "All"
-        if fmt=="sqlstring": return "'x'"
+        if fmt=="text": return vals.get(name+":text","All")
+        if fmt=="sqlstring": return vals.get(name+":sqlstring","'x'")
         if fmt=="csv": return "x"
         return vals.get(name,"")
     return re.sub(r"\$\{(\w+):(\w+)\}",rep,s)
 def run(pid,ti=0,res="0",frm="2026-09-24 10:00:00",to="2026-09-24 16:00:00",**vals):
     v={"resolucion":res,"cuit":"","establecimiento":"","producto":"$__all","plataforma":"$__all","modalidad":"$__all"}; v.update(vals)
     q=interp(P[pid]["targets"][ti]["rawSQL"],frm,to,v)
-    q=q.replace("CAST(current_timestamp AT TIME ZONE 'UTC' AS timestamp)","TIMESTAMP '2026-09-24 16:00:00'")
+    q=q.replace("CAST(current_timestamp AT TIME ZONE 'UTC' AS timestamp)","TIMESTAMP '2026-09-24 16:00:00'").replace("current_date","DATE '2026-09-24'")  # "ahora" fijo: los datos son del 24/09
     duck=sqlglot.transpile(q.rstrip().rstrip(";"),read="trino",write="duckdb")[0]
     cur=con.execute(duck)
     cols=[c[0] for c in cur.description]
@@ -160,6 +162,30 @@ if 5 in P:
     check(abs(res["TAA"] + res["Tasa de rechazo"] - 100) < 0.02, "TAA + tasa de rechazo = 100%")
     c, r = run(1000, cuit="$__all")
     check(fila(c, r[0])["trx_min"] == 35.0, "CUIT '$__all' (link desde One page) = todos")
+
+    print("Marcas: lista comun (PC, PM y PP son Marcas Privadas)")
+    def trx_min(**v):
+        c, r = run(1000, **v)
+        return fila(c, r[0])["trx_min"]
+    def marca(valor, texto):
+        return {"marca:text": texto, "marca:sqlstring": "'%s'" % valor}
+    check(trx_min(**marca("PRIVADAS", "Marcas Privadas")) == 5.0,
+          "filtro Marca = Marcas Privadas trae las PC (5 TRX/min)")
+    check(trx_min(**marca("OTRAS", "Otras")) == 0.0,
+          "filtro Marca = Otras ya no trae las PC")
+    check(trx_min(**marca("VISA", "Visa")) == 30.0, "filtro Marca = Visa: 30 TRX/min")
+    check(trx_min(producto="Marcas Privadas") == 5.0, "filtro Producto = Marcas Privadas trae las PC")
+    check(trx_min(producto="Crédito") == 30.0, "filtro Producto = Crédito: las VC")
+    c, r = run(30)
+    serie = {k: [fila(c, x)[k] for x in r] for k in ("VISA", "PRIVADAS", "NARANJA")}
+    check(any(v is not None for v in serie["PRIVADAS"]) and all(v is None for v in serie["NARANJA"]),
+          "'TAA por marca' muestra la serie Marcas Privadas (y Naranja vacía, no hay PN)")
+    for pid, nombre in ((106, "Marcas Privadas (por marca)"), (113, "Marcas Privadas (por producto)")):
+        c, r = run(pid)
+        check(len(r) > 0 and sum(fila(c, x)["Aprobadas"] or 0 for x in r) > 0,
+              "detalle %s %s tiene datos" % (pid, nombre))
+    c, r = run(105)
+    check(len(r) == 0, "detalle 105 Naranja vacío (no hay PN en los datos)")
 
 print("\n%s" % ("TODO OK" if not fallas else "FALLAS: %d" % len(fallas)))
 sys.exit(1 if fallas else 0)

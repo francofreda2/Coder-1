@@ -17,8 +17,24 @@ filas = [p for p in top if p["type"] == "row"]
 
 ids = [p["id"] for p in todos]
 chk(len(ids) == len(set(ids)), "ids unicos (%d paneles)" % len(ids))
-esperados = {p["id"] for p in v17["panels"]} - {100, 1, 2, 3, 4} | {5, 1006, 1007}
-chk(set(ids) == esperados, "estan todos los paneles de la v17.1 (Estado General -> panel 5)")
+esperados = {p["id"] for p in v17["panels"]} - {100, 1, 2, 3, 4} | {5, 1006, 1007} | {105, 106, 113, 114, 115}
+chk(set(ids) == esperados, "estan todos los paneles de la v17.1 (Estado General -> panel 5, + 5 detalles)")
+
+# Marcas: cada detalle filtra su segmento con la lista comun, igual que el filtro
+import logica_marcas as lm
+segs = {721: ("marca", "VISA"), 101: ("marca", "MASTERCARD"), 102: ("marca", "CABAL_DISCOVER"),
+        103: ("marca", "AMEX"), 104: ("marca", "UPI"), 105: ("marca", "NARANJA"),
+        106: ("marca", "PRIVADAS"), 110: ("producto", "Crédito"), 111: ("producto", "Débito"),
+        112: ("producto", "Prepaga"), 113: ("producto", "Marcas Privadas"),
+        114: ("producto", "Naranja Pura"), 115: ("producto", "Indeterminado (Créd/Déb)")}
+for pid, (dim, val) in segs.items():
+    expr = lm.marca_abt0() if dim == "marca" else lm.producto()
+    tg_ = [t["rawSQL"] for t in por_id[pid]["targets"]]
+    chk(len(tg_) == 2 and all("AND (%s) = '%s'" % (expr, val) in x for x in tg_),
+        "detalle %s filtra %s = %s (actual y D-1)" % (pid, dim, val))
+seccion = {f["id"]: [h["id"] for h in f["panels"]] for f in filas if f.get("collapsed")}
+chk({105, 106} <= set(seccion[420]) and {113, 114, 115} <= set(seccion[430]),
+    "detalles nuevos dentro de sus secciones colapsadas")
 
 # Layout
 def solapados(panels):

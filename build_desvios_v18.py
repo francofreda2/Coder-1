@@ -24,6 +24,8 @@ import copy
 import json
 import sys
 
+import logica_marcas as lm
+
 ENTRADA = "desvios_v17.1_noc.json"
 SALIDA = "desvios_v18.json"
 
@@ -59,7 +61,7 @@ SECCIONES = [
     (310, "Detalle · motivos de cada cuadrante", True),
     (400, "5 · ¿Qué marca?  —  clic en una marca para filtrar el tablero", False),
     (420, "Detalle · TAA y volumen por marca", True),
-    (430, "Detalle · TAA y volumen por producto (Crédito / Débito / Prepago)", True),
+    (430, "Detalle · TAA y volumen por tipo de producto", True),
     (720, "Detalle · top 10 bancos emisores por rechazos", True),
     (710, "Detalle · top 10 BINes por rechazos  (lee CTX: más lento)", True),
 ]
@@ -96,13 +98,22 @@ DESCRIPCIONES = {
         "tablero por esa marca.",
     120: "Los 10 bancos emisores con más rechazos en el rango, por bucket.",
 }
-for _id, _marca in ((721, "Visa"), (101, "Mastercard"), (102, "Cabal"), (103, "Amex"), (104, "UPI")):
-    DESCRIPCIONES[_id] = ("TAA de %s (eje izquierdo) con aprobadas y denegadas "
-                          "(eje derecho) por bucket." % _marca)
-for _id, _prod in ((110, "Crédito"), (111, "Débito"), (112, "Prepago")):
-    DESCRIPCIONES[_id] = ("TAA de %s (eje izquierdo) con aprobadas y denegadas "
-                          "(eje derecho) por bucket. Clasificación original por "
-                          "INSTRMTYP, no la del filtro Producto." % _prod)
+# Detalles nuevos: (id, panel que se clona, dimension, valor, texto)
+DETALLES_NUEVOS = [
+    (105, 104, "marca", "NARANJA", "Naranja"),
+    (106, 104, "marca", "PRIVADAS", "Marcas Privadas"),
+    (113, 112, "producto", "Marcas Privadas", "Marcas Privadas"),
+    (114, 112, "producto", "Naranja Pura", "Naranja Pura"),
+    (115, 112, "producto", "Indeterminado (Créd/Déb)", "Indeterminado (Créd/Déb)"),
+]
+for _id, _marca in ((721, "Visa"), (101, "Mastercard"), (102, "Cabal / Discover"), (103, "Amex"),
+                    (104, "UPI"), (105, "Naranja (PN)"), (106, "Marcas Privadas (PB, PC, PM y PP)")):
+    DESCRIPCIONES[_id] = ("TAA de %s (eje izquierdo) con aprobadas y denegadas (eje derecho) "
+                          "por bucket. Misma lista de marcas que el filtro Marca." % _marca)
+for _id, _prod in ((110, "Crédito"), (111, "Débito"), (112, "Prepaga"), (113, "Marcas Privadas"),
+                   (114, "Naranja Pura"), (115, "Indeterminado (Créd/Déb)")):
+    DESCRIPCIONES[_id] = ("TAA de %s (eje izquierdo) con aprobadas y denegadas (eje derecho) "
+                          "por bucket. Misma clasificación que el filtro Producto." % _prod)
 
 CUIT_ALL_VIEJO = "COALESCE(NULLIF('${cuit:raw}',''),'-1')='-1'"
 CUIT_ALL_NUEVO = "COALESCE(NULLIF('${cuit:raw}',''),'-1') IN ('-1','$__all')"
@@ -123,7 +134,7 @@ def url_one_page(plataforma="${plataforma:queryparam}", con_rango=True):
     if not plataforma.startswith("${plataforma"):
         plataforma = "var-plataforma=" + plataforma
     rango = "${__url_time_range}&" if con_rango else ""
-    return ("/d/%s/?%svar-cuit=${cuit:raw}&%s"
+    return ("/d/%s/?%svar-cuit=${cuit:raw}&%s&${marca:queryparam}"
             "&${producto:queryparam}&${modalidad:queryparam}" % (UID_ONE_PAGE, rango, plataforma))
 
 
@@ -237,6 +248,40 @@ def resumen_rango(stat_taa):
     }
 
 
+def detalles_nuevos(grupos):
+    """Agrega los detalles de Naranja y Marcas Privadas (por marca) y de Marcas
+    Privadas, Naranja Pura e Indeterminado (por producto), clonando el ultimo
+    panel de cada seccion y cambiando solo el segmento."""
+    for nid, base_id, dim, valor, texto in DETALLES_NUEVOS:
+        fila = 420 if dim == "marca" else 430
+        grupo = grupos[fila]
+        base = [p for p in grupo if p["id"] == base_id][0]
+        _, base_val = (("marca", "UPI") if base_id == 104 else ("producto", "Prepaga"))
+        base_txt = "UPI" if base_id == 104 else "Prepaga"
+        nuevo = copy.deepcopy(base)
+        nuevo["id"] = nid
+        nuevo["title"] = base["title"].replace(base_txt, texto, 1)
+        nuevo.pop("description", None)
+        for t in nuevo["targets"]:
+            assert t["rawSQL"].count(") = '%s'" % base_val) >= 1, (nid, base_val)
+            t["rawSQL"] = (t["rawSQL"].replace(") = '%s'" % base_val, ") = '%s'" % valor)
+                           .replace('"TAA %s"' % base_txt, '"TAA %s"' % texto))
+        for ov in nuevo["fieldConfig"]["overrides"]:
+            if ov["matcher"]["options"] == "TAA " + base_txt:
+                ov["matcher"]["options"] = "TAA " + texto
+        # Siguiente lugar libre de la grilla de la seccion (mismo ancho que el panel base)
+        w, h = base["gridPos"]["w"], base["gridPos"]["h"]
+        ocupados = {(p["gridPos"]["x"], p["gridPos"]["y"]) for p in grupo}
+        y = min(p["gridPos"]["y"] for p in grupo)
+        x = 0
+        while (x, y) in ocupados:
+            x += w
+            if x + w > 24:
+                x, y = 0, y + h
+        nuevo["gridPos"] = {"h": h, "w": w, "x": x, "y": y}
+        grupo.append(nuevo)
+
+
 def links_gateway(panel, campo_cod, campo_nombre):
     links = [data_link("Filtrar el tablero por " + campo_nombre,
                        url_filtrar("plataforma", campo_cod)),
@@ -259,6 +304,7 @@ def main():
     grupos[200].insert(0, resumen)
 
     grupos[900] = kpis(grupos[900])
+    detalles_nuevos(grupos)
 
     # Clic para filtrar
     por_id = {p["id"]: p for g in grupos.values() for p in g}
@@ -287,7 +333,7 @@ def main():
                 data_link("Ver ${__data.fields.Gateway} en One page live monitoring",
                           url_one_page("${__data.fields.cod}"))]})
     por_id[30]["fieldConfig"]["defaults"]["links"] = [
-        data_link("Filtrar el tablero por ${__field.name}",
+        data_link("Filtrar el tablero por esta marca",
                   url_filtrar("marca", "${__field.name}"))]
 
     # Panel 10: Baseline D-1 comparte el eje de la TAA (antes abria un tercer eje)
@@ -344,7 +390,7 @@ def main():
     dash["links"] = [
         {"asDropdown": False, "icon": "dashboard", "includeVars": False, "keepTime": True,
          "tags": [], "targetBlank": False, "title": "One page live monitoring",
-         "tooltip": "Mismo rango, CUIT, gateway, producto y modalidad",
+         "tooltip": "Mismo rango, CUIT, gateway, marca, producto y modalidad",
          "type": "link", "url": url_one_page(con_rango=False)},
         {"asDropdown": False, "icon": "sync", "includeVars": False, "keepTime": True,
          "tags": [], "targetBlank": False, "title": "Limpiar filtros",

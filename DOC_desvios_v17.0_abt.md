@@ -114,7 +114,7 @@ AND ( '${producto:raw}' IN ('-1','','$__all')
                WHEN TRIM(a.instrmtyp) IN ('VD','MD','MS')                    THEN 'Débito'
                WHEN TRIM(a.instrmtyp) IN ('V6','VB','VN','VC','MC','AX','PA') THEN 'Crédito'
                WHEN TRIM(a.instrmtyp) IN ('VK','SR','MK')                    THEN 'Prepaga'
-               WHEN TRIM(a.instrmtyp) = 'PB'                                 THEN 'Marcas Privadas'
+               WHEN TRIM(a.instrmtyp) IN ('PB','PC','PM','PP')               THEN 'Marcas Privadas'
                WHEN TRIM(a.instrmtyp) = 'PN'                                 THEN 'Naranja Pura'
                WHEN TRIM(a.instrmtyp) = 'UC'                                 THEN 'Indeterminado (Créd/Déb)'
                ELSE 'Otro'
@@ -123,6 +123,10 @@ AND ( '${producto:raw}' IN ('-1','','$__all')
 
 Opciones: Crédito, Débito, Prepaga, Naranja Pura, Marcas Privadas,
 Indeterminado, Otro.
+
+Desde el 02/10/2026 la clasificación sale de `logica_marcas.py` (lista común:
+PB, PC, PM y PP son Marcas Privadas). En el JSON aparece con
+`TRIM(COALESCE(a.instrmtyp,''))`, que da el mismo resultado.
 
 ### 4.2 Plataforma de pago / gateway (`$plataforma`)
 

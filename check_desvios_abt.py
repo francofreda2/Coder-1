@@ -26,8 +26,9 @@ chk(set(sp) == set(op), "ids de panel identicos")
 chk(all(sp[i].get("gridPos") == op[i].get("gridPos") and sp[i].get("type") == op[i].get("type")
         for i in sp), "layout y tipos de panel intactos")
 chk(all(json.dumps(sp[i].get(k), sort_keys=True) == json.dumps(op[i].get(k), sort_keys=True)
-        for i in sp for k in ("fieldConfig", "transformations", "options")),
-    "fieldConfig / transformations / options intactos")
+        for i in sp for k in ("fieldConfig", "transformations", "options")
+        if not (i in (30, 112) and k == "fieldConfig")),
+    "fieldConfig / transformations / options intactos (salvo 30 y 112: lista de marcas)")
 
 tg = [(p["id"], t["rawSQL"]) for p in out["panels"]
       for t in (p.get("targets") or []) if t.get("rawSQL")]
@@ -60,7 +61,26 @@ for c in ["nri IS NULL AND ciss IS NOT NULL AND TRIM(ciss) NOT IN('59','63','83'
           "NOT IN('92','30')"]:
     a = sum(x.count(c) for x in sv)
     b = sum(s.count(c) for i, s in tg)
+    if c.startswith("cr IN"):
+        a += 2   # 'TAA por marca' suma las columnas NARANJA y PRIVADAS
     chk(a == b and a > 0, "logica preservada (%d = %d): %s" % (a, b, c[:44]))
+
+# Marcas: lista comun (logica_marcas.py)
+import logica_marcas as lm
+chk(not any("THEN 'Cabal'" in s or "'Otra'" in s for i, s in tg),
+    "no queda la clasificacion de marca de v16.8")
+chk(all(lm.marca_abt0() in s for i, s in tg if i != 38) and lm.marca_ctx("a.INSTRMTYP") in dict(tg)[38],
+    "todas las consultas clasifican la marca con la lista comun (ABT0 y CTX)")
+chk(all("IN ('PB','PC','PM','PP') THEN 'Marcas Privadas'" in s for i, s in tg),
+    "filtro Producto con PB, PC, PM y PP en los 33 targets")
+chk(not any(re.search(r"AND a\.instrmtyp IN\(", s) for i, s in tg),
+    "ningun detalle elige su segmento con una lista propia")
+mv = [v for v in out["templating"]["list"] if v["name"] == "marca"][0]
+chk([o["value"] for o in mv["options"]][1:] == [v for v, _ in lm.MARCAS],
+    "variable Marca con la lista comun (VISA ... PRIVADAS, OTRAS)")
+s30 = dict(tg)[30]
+chk(all('AS "%s"' % v in s30 for v, _ in lm.MARCAS if v != "OTRAS"),
+    "'TAA por marca' tiene una serie por marca, incluidas Naranja y Privadas")
 
 def balanceado(s):
     d = 0; en_str = False; esc = False
