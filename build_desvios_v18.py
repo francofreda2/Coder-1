@@ -27,7 +27,7 @@ import sys
 import logica_marcas as lm
 
 ENTRADA = "desvios_v17.1_noc.json"
-SALIDA = "desvios_v18.json"
+SALIDA = "desvios_v19.json"
 
 UID = "payway-desvios"
 UID_ONE_PAGE = "payway-tx-v21"
@@ -38,7 +38,7 @@ DS_DASH = {"type": "datasource", "uid": "-- Dashboard --"}
 
 ORDEN_VARIABLES = ["plataforma", "marca", "producto", "modalidad", "cuit",
                    "establecimiento", "banco", "motivo_emisor", "motivo_adqte",
-                   "resolucion"]
+                   "ventana", "resolucion"]
 ETIQUETAS = {
     "plataforma": ("Gateway", "Plataforma de pago (sufijo de 4 dígitos de programaperiferiaorigen)."),
     "marca": ("Marca", "Una o varias marcas."),
@@ -49,6 +49,8 @@ ETIQUETAS = {
     "banco": ("Banco emisor", "Uno o varios bancos emisores."),
     "motivo_emisor": ("Motivo emisor", "Código de respuesta del emisor (2 dígitos)."),
     "motivo_adqte": ("Motivo adquirente", "Rechazo interno del adquirente."),
+    "ventana": ("Ventana de estado", "Minutos que se miden para el estado (indicadores y tabla de "
+                "gateways) contra lo habitual. 5' reacciona antes; 15' tiene menos ruido."),
     "resolucion": ("Resolución", "Tamaño del bucket de los gráficos. Durante un incidente, 1 min."),
 }
 
@@ -67,8 +69,8 @@ SECCIONES = [
 ]
 
 TITULOS = {
-    10: "TAA actual vs D-1 y volumen (Total / Aprobadas / Denegadas)",
-    11: "Desvío de TAA vs D-1 (pp)",
+    10: "TAA actual vs habitual y volumen (Total / Aprobadas / Denegadas)",
+    11: "Desvío de TAA vs habitual (pp)",
     20: "Denegadas por cuadrante",
     21: "Fondos insuficientes + Do Not Honor",
     22: "Otros motivos (sin Fondos / DNH)",
@@ -82,8 +84,8 @@ TITULOS = {
 }
 
 DESCRIPCIONES = {
-    11: "TAA actual menos TAA del mismo bucket de ayer, en puntos porcentuales. "
-        "Negativo = hoy se aprueba menos que ayer.",
+    11: "TAA actual menos la TAA habitual del mismo bucket (mediana de D-7 · D-14 · D-21 "
+        "sin feriados), en puntos porcentuales. Negativo = hoy se aprueba menos que lo habitual.",
     20: "Denegadas de cada bucket, separadas en los cuatro cuadrantes: Operativo / "
         "Riesgo, de Emisor / Adquirente. Muestra de qué lado viene la caída de TAA.",
     21: "Las dos causas de rechazo más frecuentes del emisor. Suelen explicar el "
@@ -109,11 +111,13 @@ DETALLES_NUEVOS = [
 for _id, _marca in ((721, "Visa"), (101, "Mastercard"), (102, "Cabal / Discover"), (103, "Amex"),
                     (104, "UPI"), (105, "Naranja (PN)"), (106, "Marcas Privadas (PB, PC, PM y PP)")):
     DESCRIPCIONES[_id] = ("TAA de %s (eje izquierdo) con aprobadas y denegadas (eje derecho) "
-                          "por bucket. Misma lista de marcas que el filtro Marca." % _marca)
+                          "por bucket. Misma lista de marcas que el filtro Marca. La línea "
+                          "punteada es la TAA habitual (mediana D-7 · D-14 · D-21 sin feriados)." % _marca)
 for _id, _prod in ((110, "Crédito"), (111, "Débito"), (112, "Prepaga"), (113, "Marcas Privadas"),
                    (114, "Naranja Pura"), (115, "Indeterminado (Créd/Déb)")):
     DESCRIPCIONES[_id] = ("TAA de %s (eje izquierdo) con aprobadas y denegadas (eje derecho) "
-                          "por bucket. Misma clasificación que el filtro Producto." % _prod)
+                          "por bucket. Misma clasificación que el filtro Producto. La línea "
+                          "punteada es la TAA habitual (mediana D-7 · D-14 · D-21 sin feriados)." % _prod)
 
 CUIT_ALL_VIEJO = "COALESCE(NULLIF('${cuit:raw}',''),'-1')='-1'"
 CUIT_ALL_NUEVO = "COALESCE(NULLIF('${cuit:raw}',''),'-1') IN ('-1','$__all')"
@@ -165,42 +169,8 @@ def secciones_v17(panels):
 
 
 def kpis(grupo):
-    """Fila de indicadores NOC: 8 stats de ancho 3, con TAA 15 min y su delta."""
-    por_id = {p["id"]: p for p in grupo}
-    base = por_id[1003]
-
-    taa = copy.deepcopy(base)
-    taa.update(id=1006, title="TAA", description=(
-        "Tasa de aceptación de los últimos 15 minutos cerrados. Respeta todos los "
-        "filtros. Con volumen normal y TAA baja, el problema es de rechazos; con "
-        "volumen bajo, es de procesamiento."))
-    taa["options"]["reduceOptions"]["fields"] = "/^taa_15$/"
-    taa["fieldConfig"]["defaults"].update(unit="percent", decimals=2, thresholds={
-        "mode": "absolute", "steps": [{"color": "red", "value": None},
-                                      {"color": "orange", "value": 80},
-                                      {"color": "green", "value": 85}]})
-
-    dtaa = copy.deepcopy(base)
-    dtaa.update(id=1007, title="Δ TAA D-1", description=(
-        "TAA de los últimos 15 minutos cerrados menos la de los mismos 15 minutos "
-        "de ayer, en puntos porcentuales."))
-    dtaa["options"]["reduceOptions"]["fields"] = "/^dtaa_pp$/"
-    dtaa["fieldConfig"]["defaults"].update(unit="suffix: pp", decimals=1, thresholds={
-        "mode": "absolute", "steps": [{"color": "red", "value": None},
-                                      {"color": "orange", "value": -5},
-                                      {"color": "green", "value": -2}]})
-
-    titulos = {1000: "Datos hasta", 1001: "Atraso", 1002: "Resolución",
-               1003: "TRX/min", 1004: "Vol. vs D-1", 1005: "Silencio"}
-    for pid, t in titulos.items():
-        por_id[pid]["title"] = t
-    orden = [por_id[1000], por_id[1001], por_id[1002], por_id[1003], por_id[1004],
-             taa, dtaa, por_id[1005]]
-    y = por_id[1000]["gridPos"]["y"]
-    for i, p in enumerate(orden):
-        p["gridPos"] = {"h": 4, "w": 3, "x": 3 * i, "y": y}
-    resto = [p for p in grupo if p["id"] not in titulos]
-    return orden + resto
+    """Fila de indicadores NOC: los 8 stats ya vienen armados (build_desvios_noc.py)."""
+    return grupo
 
 
 def resumen_rango(stat_taa):
@@ -311,20 +281,6 @@ def main():
     links_gateway(por_id[1101], "${__field.labels.cod}", "${__field.labels.metric}")
     links_gateway(por_id[1102], "${__field.labels.cod}", "${__field.labels.metric}")
     tabla = por_id[1103]
-    cortos = {"TRX últ. 15 min": "TRX 15'", "TRX D-1 mismo horario": "TRX D-1 15'",
-              "TAA últ. 15 min": "TAA 15'", "TAA D-1": "TAA D-1 15'", "Δ TAA (pp)": "Δ TAA pp",
-              "Último tráfico (hs)": "Último tráfico", "Silencio (min)": "Silencio"}
-    for campo, nombre in cortos.items():
-        tabla["fieldConfig"]["overrides"].append(
-            {"matcher": {"id": "byName", "options": campo},
-             "properties": [{"id": "displayName", "value": nombre}]})
-    tabla["fieldConfig"]["defaults"]["custom"]["minWidth"] = 70
-    tabla["fieldConfig"]["overrides"].append(
-        {"matcher": {"id": "byName", "options": "TRX últ. 6 h"},
-         "properties": [{"id": "custom.hidden", "value": True}]})
-    tabla["fieldConfig"]["overrides"].append(
-        {"matcher": {"id": "byName", "options": "Silencio (min)"},
-         "properties": [{"id": "unit", "value": "m"}]})
     for ov in tabla["fieldConfig"]["overrides"]:
         if ov["matcher"]["options"] == "Gateway":
             ov["properties"].append({"id": "links", "value": [
@@ -336,11 +292,11 @@ def main():
         data_link("Filtrar el tablero por esta marca",
                   url_filtrar("marca", "${__field.name}"))]
 
-    # Panel 10: Baseline D-1 comparte el eje de la TAA (antes abria un tercer eje)
+    # Panel 10: la TAA habitual comparte el eje de la TAA (antes abria un tercer eje)
     # y la leyenda muestra solo el ultimo valor para que entren las 6 series.
     p10 = por_id[10]
     for ov in p10["fieldConfig"]["overrides"]:
-        if ov["matcher"]["options"] == "Baseline D-1":
+        if ov["matcher"]["options"] == "TAA habitual":
             ov["properties"].append({"id": "custom.axisPlacement", "value": "left"})
     p10["options"]["legend"]["calcs"] = ["lastNotNull"]
 
@@ -401,9 +357,10 @@ def main():
     dash.update(uid=UID, title=TITULO, tags=TAGS, version=1)
     dash.pop("id", None)
     dash["description"] = (
-        "v18. Recorrido de arriba hacia abajo: 1 ¿Está procesando? 2 ¿Dónde? "
+        "v19. Recorrido de arriba hacia abajo: 1 ¿Está procesando? 2 ¿Dónde? "
         "3 ¿Cuándo baja la TAA? 4 ¿Por qué? 5 ¿Qué marca? El detalle está en "
-        "secciones colapsadas.")
+        "secciones colapsadas. Los desvíos se miden contra lo habitual (mediana de "
+        "D-7 · D-14 · D-21 sin feriados) con la lógica z-score de las alertas.")
 
     salida = json.dumps(dash, ensure_ascii=False, indent=2)
     json.loads(salida)

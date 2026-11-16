@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Valida la estructura e interaccion de desvios_v18.json.  python3 check_desvios_v18.py"""
+"""Valida la estructura e interaccion de desvios_v19.json.  python3 check_desvios_v19.py"""
 import json
 import re
 import sys
 
-d = json.load(open("desvios_v18.json", encoding="utf-8"))
+d = json.load(open("desvios_v19.json", encoding="utf-8"))
 v17 = json.load(open("desvios_v17.1_noc.json", encoding="utf-8"))
 err, ok = [], []
 def chk(c, m): (ok if c else err).append(m)
@@ -17,7 +17,7 @@ filas = [p for p in top if p["type"] == "row"]
 
 ids = [p["id"] for p in todos]
 chk(len(ids) == len(set(ids)), "ids unicos (%d paneles)" % len(ids))
-esperados = {p["id"] for p in v17["panels"]} - {100, 1, 2, 3, 4} | {5, 1006, 1007} | {105, 106, 113, 114, 115}
+esperados = {p["id"] for p in v17["panels"]} - {100, 1, 2, 3, 4} | {5} | {105, 106, 113, 114, 115}
 chk(set(ids) == esperados, "estan todos los paneles de la v17.1 (Estado General -> panel 5, + 5 detalles)")
 
 # Marcas: cada detalle filtra su segmento con la lista comun, igual que el filtro
@@ -31,7 +31,7 @@ for pid, (dim, val) in segs.items():
     expr = lm.marca_abt0() if dim == "marca" else lm.producto()
     tg_ = [t["rawSQL"] for t in por_id[pid]["targets"]]
     chk(len(tg_) == 2 and all("AND (%s) = '%s'" % (expr, val) in x for x in tg_),
-        "detalle %s filtra %s = %s (actual y D-1)" % (pid, dim, val))
+        "detalle %s filtra %s = %s (actual y habitual)" % (pid, dim, val))
 seccion = {f["id"]: [h["id"] for h in f["panels"]] for f in filas if f.get("collapsed")}
 chk({105, 106} <= set(seccion[420]) and {113, 114, 115} <= set(seccion[430]),
     "detalles nuevos dentro de sus secciones colapsadas")
@@ -134,6 +134,24 @@ chk(all("${resolucion:text}" not in p.get("title", "") for p in todos), "titulos
 chk(all((p.get("description") or "").strip() for p in todos if p["type"] != "row"),
     "todos los paneles tienen descripcion")
 chk(d["uid"] == "payway-desvios" and "id" not in d, "uid estable payway-desvios")
+
+# Desvios: logica de las alertas (logica_desvios.py), nada contra D-1
+import logica_desvios as ld
+sqls = [t["rawSQL"] for p in todos for t in (p.get("targets") or []) if t.get("rawSQL")]
+chk(not any(re.search(r"D-1\b", x) for x in sqls + [p.get("title", "") for p in todos]),
+    "ninguna consulta ni titulo compara contra D-1")
+chk(ld.estado_ctes("src") in kpi_sql and ld.estado_ctes("src") in por_id[1103]["targets"][0]["rawSQL"],
+    "indicadores y tabla de gateways usan el estado de las alertas (estado_ctes)")
+chk(all("'2026-11-23'" in x for x in sqls if "INTERVAL '168' HOUR" in x),
+    "toda comparacion contra lo habitual saca los feriados")
+nhab = sum(1 for x in sqls if "INTERVAL '504' HOUR" in x)
+chk(nhab == 2 + 1 + 1 + 1 + 13, "%d consultas contra D-7·D-14·D-21 (KPI, tabla, 1010, 10, 11 y 13 detalles)" % nhab)
+sev = ld.mapeos_severidad()
+chk(all(por_id[i]["fieldConfig"]["defaults"]["mappings"] == sev for i in (1003, 1004, 1005, 1006, 1007)),
+    "Estado, Volumen, Aceptacion, Denegadas y Reversos se pintan por severidad")
+est_ov = [o for o in por_id[1103]["fieldConfig"]["overrides"] if o["matcher"]["options"] == "Estado"][0]
+chk({"id": "mappings", "value": sev} in est_ov["properties"], "la columna Estado de la tabla se pinta por severidad")
+chk("ventana" in nombres, "variable Ventana de estado (5' / 15')")
 
 print("\n".join("  OK  " + m for m in ok))
 if err:

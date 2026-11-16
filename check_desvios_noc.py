@@ -10,7 +10,7 @@ def chk(c, m): (ok if c else err).append(m)
 
 P = d["panels"]
 ids = [p["id"] for p in P]
-chk(len(ids) == len(set(ids)) == 47, "47 paneles con id unico")
+chk(len(ids) == len(set(ids)) == 49, "49 paneles con id unico")
 chk(set(p["id"] for p in src["panels"]) <= set(ids), "los 33 paneles de la v17.0 siguen presentes")
 
 celdas = {}
@@ -36,7 +36,7 @@ chk(refs and all(r in fuentes and any(t.get("rawSQL") for t in fuentes[r]["targe
     "%d paneles reusan la consulta de otro panel valido (-- Dashboard --)" % len(refs))
 
 nuevos = [t["rawSQL"] for p in P if p["id"] >= 1000 for t in (p.get("targets") or []) if t.get("rawSQL")]
-chk(len(nuevos) == 4, "4 consultas nuevas a Athena para los 12 paneles NOC")
+chk(len(nuevos) == 4, "4 consultas nuevas a Athena para los 14 paneles NOC")
 for lbl, pat in [("Tipo de producto", "FILTRO Tipo de producto"),
                  ("Plataforma", "FILTRO Plataforma de pago"),
                  ("Modalidad", "FILTRO Modalidad"),
@@ -50,11 +50,11 @@ chk(not any("%15)" in s for s in todos), "no quedan buckets fijos de 15 min")
 chk(not any(p.get("title", "").endswith("· 15m") for p in P), "ningun titulo dice '15m' fijo")
 
 p10 = fuentes[10]
-chk('"Total TRX"' in p10["targets"][0]["rawSQL"] and '"Total D-1"' in p10["targets"][1]["rawSQL"],
-    "panel 10 trae Total TRX y Total D-1")
+chk('"Total TRX"' in p10["targets"][0]["rawSQL"] and '"Total habitual"' in p10["targets"][1]["rawSQL"],
+    "panel 10 trae Total TRX y Total habitual")
 
 v = [x["name"] for x in d["templating"]["list"]]
-chk(v[0] == "resolucion" and len(v) == 10, "variable Resolucion agregada (10 variables)")
+chk(v[:2] == ["resolucion", "ventana"] and len(v) == 11, "variables Resolucion y Ventana de estado agregadas (11)")
 chk(d["timezone"] == "America/Argentina/Buenos_Aires", "zona horaria del tablero = Argentina")
 chk(d["uid"] == "desvios-v17-noc" and "id" not in d, "uid nuevo y sin id")
 
